@@ -30,3 +30,21 @@
 
 - Provide full, complete file outputs. Avoid using placeholders like `// ... rest of code stays the same`.
 - Include clear export paths as a comment block on line 1 of every generated code snippet (e.g., `// File: src/components/HabitCard.tsx`).
+
+# Project Automation Workspace
+
+## Environment Prerequisites
+
+- Connected Tools: Trello MCP Server
+
+## Task Lifecycle and Integration Rules
+
+- Always pull task objectives from our synchronized project management tool.
+- At the start of every thread session, look for the target Trello board named "Club Booking".
+- Restrict your primary task ingestion strictly to cards found under the column: "**In Progress**".
+
+## Execution Workflow Steps
+
+1. Execute `trello.get_board` or scan the column lists to find active work.
+2. Read the card descriptions and checklist criteria completely before drafting code.
+3. Once code is successfully written, update the corresponding card with a comment or status change if permitted.

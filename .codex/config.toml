@@ -1,0 +1,3 @@
+[env]
+TRELLO_BOARD_NAME = "Club Booking"
+TRELLO_TARGET_COLUMN = "In Progress"
