@@ -30,6 +30,7 @@
 
 - Provide full, complete file outputs. Avoid using placeholders like `// ... rest of code stays the same`.
 - Include clear export paths as a comment block on line 1 of every generated code snippet (e.g., `// File: src/components/HabitCard.tsx`).
+- Include comments to explain functionality and purpose of code
 
 # Project Automation Workspace
 

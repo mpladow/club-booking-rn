@@ -24,7 +24,9 @@ import {
 } from "@/data/bookings";
 import { useBookings } from "@/hooks/use-bookings";
 import { HeaderScrollInset } from "@/components/navigation-header";
+import { ScreenHeading } from "@/components/screen-heading";
 import { useScreenScroll } from "@/hooks/use-header-scroll";
+import { useWideNavigation } from "@/hooks/use-wide-navigation";
 type Step = 0 | 1 | 2 | 3;
 const TITLES: readonly string[] = [
   "Select date",
@@ -50,6 +52,8 @@ const ToggleRow = ({
 );
 const CreateBookingScreen = (): ReactElement => {
   const onScroll = useScreenScroll();
+  const wide = useWideNavigation();
+  const constrainContent: boolean = Platform.OS === "web" && wide;
   const { submit } = useBookings();
   const [step, setStep] = useState<Step>(0);
   const [draft, setDraft] = useState<BookingDraft>({
@@ -126,133 +130,138 @@ const CreateBookingScreen = (): ReactElement => {
   return (
     <SafeAreaView
       edges={["bottom", "left", "right"]}
-      className="flex-1 bg-neutral-50"
+      className="min-h-0 flex-1 bg-neutral-50"
     >
       <Stack.Screen options={{ gestureEnabled: false, title: TITLES[step] }} />
       <KeyboardAvoidingView
-        className="flex-1"
+        className="min-h-0 flex-1"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
-          className="min-h-0 flex-1 px-5"
+          className={`min-h-0 flex-1 ${constrainContent ? "" : "px-5"}`}
           keyboardShouldPersistTaps="handled"
           onScroll={onScroll}
           scrollEventThrottle={16}
           contentInsetAdjustmentBehavior="never"
           automaticallyAdjustContentInsets={false}
         >
-          <HeaderScrollInset />
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm text-neutral-500">
-              Step {step + 1} of 4
-            </Text>
-            <Button variant="text" onPress={(): void => setDiscard(true)}>
-              Close
-            </Button>
-          </View>
-          <View className="mb-6 flex-row gap-2">
-            {TITLES.map(
-              (title: string, index: number): ReactElement => (
-                <View
-                  key={title}
-                  className={`h-1 flex-1 rounded-full ${index <= step ? "bg-indigo-600" : "bg-neutral-200"}`}
-                />
-              ),
-            )}
-          </View>
-          {step === 0 && (
-            <BookingCalendar
-              value={draft.date}
-              onChange={(date: string): void => update({ date })}
-            />
-          )}
-          {step === 1 && (
-            <View className="gap-4">
-              {TABLES.map(
-                (table: number): ReactElement => (
-                  <Button
-                    key={table}
-                    variant={
-                      draft.table === table
-                        ? "toggle-active"
-                        : "toggle-inactive"
-                    }
-                    onPress={(): void => update({ table })}
-                  >{`Table ${table}`}</Button>
-                ),
-              )}
-            </View>
-          )}
-          {step === 2 && (
-            <View className="gap-6">
-              <View className="gap-2">
-                <Text
-                  nativeID="game-label"
-                  className="text-base font-medium text-neutral-900"
-                >
-                  What game are you playing?
-                </Text>
-                <TextInput
-                  accessibilityLabel="What game are you playing? Optional"
-                  placeholder="Game name (optional)"
-                  value={draft.game}
-                  onChangeText={(game: string): void => update({ game })}
-                  maxLength={50}
-                  className="h-12 rounded-xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 focus:border-indigo-600"
-                />
+          <View className={constrainContent ? "w-screen" : undefined}>
+            <View className={constrainContent ? "mx-auto w-full max-w-6xl px-5" : undefined}>
+              <HeaderScrollInset />
+              <ScreenHeading title={TITLES[step]} />
+              <View className="flex-row items-center justify-between">
                 <Text className="text-sm text-neutral-500">
-                  Optional · {draft.game.length}/50
+                  Step {step + 1} of 4
                 </Text>
+                <Button variant="text" onPress={(): void => setDiscard(true)}>
+                  Close
+                </Button>
               </View>
-              <ToggleRow
-                label="Spectators encouraged?"
-                value={draft.spectators}
-                onChange={(spectators: boolean): void => update({ spectators })}
-              />
-              <ToggleRow
-                label="Demo Game"
-                value={draft.demo}
-                onChange={(demo: boolean): void => update({ demo })}
-              />
-            </View>
-          )}
-          {step === 3 && (
-            <View className="rounded-xl border border-neutral-200 bg-white px-4">
-              {summary.map(
-                (row: {
-                  label: string;
-                  value: string;
-                  step: Step;
-                }): ReactElement => (
-                  <Pressable
-                    key={row.label}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Edit ${row.label}: ${row.value}`}
-                    onPress={(): void => setStep(row.step)}
-                    className="gap-2 border-b border-neutral-200 py-4 active:opacity-75"
-                  >
-                    <Text className="text-sm text-neutral-500">
-                      {row.label}
-                    </Text>
-                    <Text className="text-base font-medium text-neutral-900">
-                      {row.value}
-                    </Text>
-                  </Pressable>
-                ),
+              <View className="mb-6 flex-row gap-2">
+                {TITLES.map(
+                  (title: string, index: number): ReactElement => (
+                    <View
+                      key={title}
+                      className={`h-1 flex-1 rounded-full ${index <= step ? "bg-indigo-600" : "bg-neutral-200"}`}
+                    />
+                  ),
+                )}
+              </View>
+              {step === 0 && (
+                <BookingCalendar
+                  value={draft.date}
+                  onChange={(date: string): void => update({ date })}
+                />
               )}
+              {step === 1 && (
+                <View className="gap-4">
+                  {TABLES.map(
+                    (table: number): ReactElement => (
+                      <Button
+                        key={table}
+                        variant={
+                          draft.table === table
+                            ? "toggle-active"
+                            : "toggle-inactive"
+                        }
+                        onPress={(): void => update({ table })}
+                      >{`Table ${table}`}</Button>
+                    ),
+                  )}
+                </View>
+              )}
+              {step === 2 && (
+                <View className="gap-6">
+                  <View className="gap-2">
+                    <Text
+                      nativeID="game-label"
+                      className="text-base font-medium text-neutral-900"
+                    >
+                      What game are you playing?
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="What game are you playing? Optional"
+                      placeholder="Game name (optional)"
+                      value={draft.game}
+                      onChangeText={(game: string): void => update({ game })}
+                      maxLength={50}
+                      className="h-12 rounded-xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 focus:border-indigo-600"
+                    />
+                    <Text className="text-sm text-neutral-500">
+                      Optional · {draft.game.length}/50
+                    </Text>
+                  </View>
+                  <ToggleRow
+                    label="Spectators encouraged?"
+                    value={draft.spectators}
+                    onChange={(spectators: boolean): void => update({ spectators })}
+                  />
+                  <ToggleRow
+                    label="Demo Game"
+                    value={draft.demo}
+                    onChange={(demo: boolean): void => update({ demo })}
+                  />
+                </View>
+              )}
+              {step === 3 && (
+                <View className="rounded-xl border border-neutral-200 bg-white px-4">
+                  {summary.map(
+                    (row: {
+                      label: string;
+                      value: string;
+                      step: Step;
+                    }): ReactElement => (
+                      <Pressable
+                        key={row.label}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${row.label}: ${row.value}`}
+                        onPress={(): void => setStep(row.step)}
+                        className="gap-2 border-b border-neutral-200 py-4 active:opacity-75"
+                      >
+                        <Text className="text-sm text-neutral-500">
+                          {row.label}
+                        </Text>
+                        <Text className="text-base font-medium text-neutral-900">
+                          {row.value}
+                        </Text>
+                      </Pressable>
+                    ),
+                  )}
+                </View>
+              )}
+              {error && (
+                <Text
+                  accessibilityRole="alert"
+                  className="mt-4 text-sm text-amber-700"
+                >
+                  {error}
+                </Text>
+              )}
+              <View className="h-8" />
             </View>
-          )}
-          {error && (
-            <Text
-              accessibilityRole="alert"
-              className="mt-4 text-sm text-amber-700"
-            >
-              {error}
-            </Text>
-          )}
-          <View className="h-8" />
+          </View>
         </ScrollView>
-        <View className="gap-2 px-5 py-4">
+        <View className={`gap-2 px-5 py-4 ${constrainContent ? "mx-auto w-full max-w-6xl" : ""}`}>
           <Button onPress={step === 3 ? confirm : next}>
             {step === 3 ? "Confirm Booking" : "Next"}
           </Button>

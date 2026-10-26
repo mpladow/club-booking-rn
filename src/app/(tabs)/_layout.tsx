@@ -1,9 +1,11 @@
 // File: src/app/(tabs)/_layout.tsx
 import { Tabs, type BottomTabBarProps } from "expo-router/js-tabs";
 import { type ReactElement } from "react";
-import { Pressable, Text, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { renderNavigationHeader } from "@/components/navigation-header";
+import { NavigationTab } from "@/components/navigation-tabs";
+import { useWideNavigation } from "@/hooks/use-wide-navigation";
 
 const FloatingTabBar = ({
   state,
@@ -12,6 +14,7 @@ const FloatingTabBar = ({
   navigateToTab,
 }: BottomTabBarProps): ReactElement => (
   <SafeAreaView
+    testID="bottom-navigation"
     edges={["bottom", "left", "right"]}
     className="absolute bottom-4 left-5 right-5 rounded-2xl border border-neutral-200 bg-white shadow-lg"
   >
@@ -23,11 +26,10 @@ const FloatingTabBar = ({
             ? "Bookings"
             : (descriptors[route.key].options.title ?? route.name);
         return (
-          <Pressable
+          <NavigationTab
             key={route.key}
-            accessibilityRole="tab"
-            accessibilityLabel={label}
-            accessibilityState={{ selected: focused }}
+            label={label}
+            selected={focused}
             onPress={(): void => {
               const event = emitter.emit({
                 type: "tabPress",
@@ -39,33 +41,29 @@ const FloatingTabBar = ({
             onLongPress={(): void => {
               emitter.emit({ type: "tabLongPress", target: route.key });
             }}
-            className={`h-12 flex-1 items-center justify-center rounded-xl active:opacity-75 ${focused ? "bg-indigo-50" : "bg-white"}`}
-          >
-            <Text
-              className={`text-base font-semibold ${focused ? "text-indigo-600" : "text-neutral-500"}`}
-            >
-              {label}
-            </Text>
-          </Pressable>
+          />
         );
       })}
     </View>
   </SafeAreaView>
 );
-const TabsLayout = (): ReactElement => (
-  <Tabs
-    tabBar={(props: BottomTabBarProps): ReactElement => (
-      <FloatingTabBar {...props} />
-    )}
-    screenOptions={{
-      header: renderNavigationHeader,
-      headerTransparent: true,
-      headerShown: true,
-      headerShadowVisible: false,
-    }}
-  >
-    <Tabs.Screen name="index" options={{ title: "Your bookings" }} />
-    <Tabs.Screen name="settings" options={{ title: "Settings" }} />
-  </Tabs>
-);
+const TabsLayout = (): ReactElement => {
+  const wide = useWideNavigation();
+  return (
+    <Tabs
+      tabBar={(props: BottomTabBarProps): ReactElement | null =>
+        wide ? null : <FloatingTabBar {...props} />
+      }
+      screenOptions={{
+        header: renderNavigationHeader,
+        headerTransparent: true,
+        headerShown: true,
+        headerShadowVisible: false,
+      }}
+    >
+      <Tabs.Screen name="index" options={{ title: "Your bookings" }} />
+      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
+    </Tabs>
+  );
+};
 export default TabsLayout;
