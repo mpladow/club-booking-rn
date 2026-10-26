@@ -1,20 +1,34 @@
-import '@/global.css';
+import "@/global.css";
 
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { type ReactElement } from "react";
+import { HeaderScrollProvider } from "@/hooks/use-header-scroll";
+import { renderNavigationHeader } from "@/components/navigation-header";
+import { BookingsProvider } from "@/hooks/use-bookings";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+const RootLayout = (): ReactElement => {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <BookingsProvider>
+      <HeaderScrollProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            header: renderNavigationHeader,
+            headerTransparent: true,
+            headerShown: true,
+            headerShadowVisible: false,
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="create-booking"
+            options={{ gestureEnabled: false, title: "Select date" }}
+          />
+        </Stack>
+      </HeaderScrollProvider>
+    </BookingsProvider>
   );
-}
+};
+
+export default RootLayout;
