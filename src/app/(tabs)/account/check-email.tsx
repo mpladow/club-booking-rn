@@ -1,2 +1,6 @@
 // File: src/app/(tabs)/account/check-email.tsx
-export { CheckEmailScreen as default } from "@/components/auth/CheckEmailScreen";
+import { type ReactElement } from "react";
+import { AuthRedirect } from "@/components/auth/AuthRedirect";
+
+const CheckEmailRedirect = (): ReactElement => <AuthRedirect checkEmail />;
+export default CheckEmailRedirect;

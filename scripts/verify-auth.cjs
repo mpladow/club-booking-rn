@@ -37,19 +37,24 @@ const load = (name) => {
     delay: async () => {},
   };
   let service = createMockAuthService(options);
-  const input = { email: ' Member@Example.com ', firstName: ' Alex ', surname: ' Smith ', password: 'lowercase123!', passwordConfirmation: 'lowercase123!' };
-  assert.equal(passwordError(input.password), undefined, 'No uppercase requirement');
-  assert.equal(passwordError('UPPERCASE123!'), undefined, 'No lowercase requirement');
-  assert.equal(passwordError('12345678901!'), undefined, 'A letter is not required');
-  assert.ok(passwordError('long-password!'), 'A number is required');
-  assert.ok(passwordError('longpassword123'), 'A symbol is required');
-  assert.ok(passwordError('12345678901 '), 'Whitespace is not a symbol');
+  const input = { email: ' Member@Example.com ', firstName: ' Alex ', surname: ' Smith ', displayName: ' Table Captain ', password: 'Lowercase123!', passwordConfirmation: 'Lowercase123!' };
+  assert.equal(passwordError(input.password), undefined);
+  assert.ok(passwordError('lowercase123!'), 'An uppercase letter is required');
+  assert.ok(passwordError('UPPERCASE123!'), 'A lowercase letter is required');
+  assert.ok(passwordError('12345678901!'), 'Letters are required');
+  assert.ok(passwordError('Long-password!'), 'A number is required');
+  assert.ok(passwordError('Longpassword123'), 'A symbol is required');
+  assert.ok(passwordError('Longpassword123 '), 'Whitespace is not a symbol');
   assert.ok(passwordError('short123!'));
-  assert.equal(passwordError('a'.repeat(126) + '1!'), undefined);
-  assert.ok(passwordError('a'.repeat(127) + '1!'));
+  assert.equal(passwordError('A' + 'a'.repeat(125) + '1!'), undefined);
+  assert.ok(passwordError('A' + 'a'.repeat(126) + '1!'));
   assert.ok(emailError('no-at-sign'));
   assert.ok(validateSignUp({ ...input, firstName: ' ', passwordConfirmation: 'different' }).firstName);
   assert.ok(validateSignUp({ ...input, passwordConfirmation: 'different' }).passwordConfirmation);
+  assert.deepEqual(Object.keys(validateSignUp(input)), [], 'Complete signup details are valid');
+  assert.ok(validateSignUp({ ...input, displayName: ' ' }).displayName, 'Display name is required');
+  assert.equal(validateSignUp({ ...input, displayName: 'd'.repeat(200) }).displayName, undefined);
+  assert.ok(validateSignUp({ ...input, displayName: 'd'.repeat(201) }).displayName, 'Display name is capped at 200 characters');
   assert.equal(await service.restoreSession(), null);
   await service.signUp(input);
   assert.equal(saved.includes(input.password), false, 'Raw passwords are never persisted');
@@ -57,14 +62,14 @@ const load = (name) => {
   assert.equal(await service.restoreSession(), null, 'Registration does not sign in automatically');
   await assert.rejects(service.signUp({ ...input, email: 'member@example.com' }), (error) => error instanceof AuthError && error.code === 'email-exists');
   const firstUser = await service.signIn('MEMBER@example.com', input.password);
-  assert.equal(firstUser.displayName, 'Alex Smith', 'Names are combined for the future API contract');
+  assert.equal(firstUser.displayName, 'Table Captain', 'The submitted display name is trimmed and kept separate from first name and surname');
   assert.equal(firstUser.email, 'member@example.com');
   service = createMockAuthService(options);
   assert.equal((await service.restoreSession()).id, firstUser.id, 'Session survives service recreation');
   await service.signOut();
   assert.equal(await createMockAuthService(options).restoreSession(), null, 'Sign-out persists');
   for (let attempt = 1; attempt <= 4; attempt++) {
-    await assert.rejects(service.signIn('member@example.com', 'wrong'), (error) => error.code === 'invalid-credentials' && error.attemptsRemaining === 5 - attempt);
+    await assert.rejects(service.signIn('member@example.com', 'wrong'), (error) => error.code === 'invalid-credentials' && error.attemptsRemaining === 5 - attempt && error.message === 'Email or password is incorrect.');
   }
   service = createMockAuthService(options);
   await assert.rejects(service.signIn('member@example.com', 'wrong'), (error) => error.code === 'reset-required');

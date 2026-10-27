@@ -67,7 +67,8 @@ const TabsLayout = (): ReactElement => {
       <Tabs.Screen name="index" options={{ title: "Your bookings" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
       <Tabs.Protected guard={!user}>
-        <Tabs.Screen name="account" options={{ href: null, headerShown: false }} />
+        {/* The custom tab bar omits Account; href: null would also redirect its routes. */}
+        <Tabs.Screen name="account" options={{ headerShown: false }} />
       </Tabs.Protected>
     </Tabs>
   );

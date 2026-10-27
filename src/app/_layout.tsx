@@ -10,6 +10,7 @@ import { HeaderScrollProvider } from "@/hooks/use-header-scroll";
 import { renderNavigationHeader } from "@/components/navigation-header";
 import { BookingsProvider } from "@/hooks/use-bookings";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { AuthDialogProvider } from "@/hooks/use-auth-dialog";
 
 const AuthenticatedLayout = (): ReactElement => {
   const { user, loading, restoreError, restore } = useAuth();
@@ -52,7 +53,9 @@ const AuthenticatedLayout = (): ReactElement => {
 
 const RootLayout = (): ReactElement => (
   <AuthProvider>
-    <AuthenticatedLayout />
+    <AuthDialogProvider>
+      <AuthenticatedLayout />
+    </AuthDialogProvider>
   </AuthProvider>
 );
 

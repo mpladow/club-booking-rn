@@ -18,6 +18,7 @@ import { ScreenHeading } from "@/components/screen-heading";
 import { useScreenScroll } from "@/hooks/use-header-scroll";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthDialog } from "@/hooks/use-auth-dialog";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 const BookingCard = ({ booking }: { booking: Booking }): ReactElement => (
   <View className="mb-3 gap-3 rounded-xl border border-neutral-200 bg-white p-4">
@@ -137,13 +138,14 @@ const SignedInBookingsScreen = (): ReactElement => {
 
 const BookingsScreen = (): ReactElement => {
   const { user } = useAuth();
+  const { openAuthDialog } = useAuthDialog();
   if (user) return <SignedInBookingsScreen />;
   return (
     <AuthScreen title="Your bookings">
       <Text className="text-lg font-semibold text-neutral-900">Sign in to book a table</Text>
       <Text className="text-sm text-neutral-500">Your bookings will be available after you sign in.</Text>
-      <Button onPress={(): void => router.navigate("/account/sign-in")}>＋ Create Booking</Button>
-      <Button variant="outlined" onPress={(): void => router.navigate("/account/sign-in")}>Sign In</Button>
+      <Button onPress={(): void => openAuthDialog()}>＋ Create Booking</Button>
+      <Button variant="outlined" onPress={(): void => openAuthDialog()}>Sign In</Button>
     </AuthScreen>
   );
 };

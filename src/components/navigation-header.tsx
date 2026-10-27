@@ -1,8 +1,8 @@
 // File: src/components/navigation-header.tsx
 import { router, type NativeStackHeaderProps } from "expo-router";
 import { type BottomTabHeaderProps } from "expo-router/js-tabs";
-import { useState, type ReactElement } from "react";
-import { Modal, Platform, Pressable, Text, View } from "react-native";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import { Dimensions, Modal, Platform, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { Button } from "@/components/ui/Button";
 import { HeaderNavigation } from "@/components/navigation-tabs";
@@ -10,6 +10,7 @@ import { CLUB_NAME, PAGE_SUBTITLES } from "@/constants/navigation";
 import { useHeaderOpacity } from "@/hooks/use-header-scroll";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthDialog } from "@/hooks/use-auth-dialog";
 import { authErrorMessage } from "@/data/auth";
 
 const OPACITY_CLASSES: readonly string[] = [
@@ -51,6 +52,14 @@ export const NavigationHeader = ({
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const { user, signOut } = useAuth();
+  const { openAuthDialog } = useAuthDialog();
+  const pendingAuth = useRef<boolean>(false);
+  useEffect((): (() => void) | undefined => {
+    if (Platform.OS !== "web") return;
+    // Close on every viewport resize, including changes within the wide layout.
+    const subscription = Dimensions.addEventListener("change", (): void => setMenuOpen(false));
+    return (): void => subscription.remove();
+  }, []);
   const handleAuth = async (): Promise<boolean> => {
     setAuthError(null);
     try {
@@ -58,7 +67,12 @@ export const NavigationHeader = ({
         await signOut();
         router.replace("/");
       } else {
-        router.navigate("/account/sign-in");
+        if (Platform.OS === "ios" && menuOpen) {
+          // Present after the native menu has finished dismissing.
+          pendingAuth.current = true;
+        } else {
+          openAuthDialog();
+        }
       }
       setMenuOpen(false);
       return !user;
@@ -140,16 +154,14 @@ export const NavigationHeader = ({
           )}
           <View className={wide ? "min-w-0 flex-1 items-end" : "items-end"}>
             {compactWebHeader ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${title} menu`}
-                accessibilityState={{ expanded: menuOpen }}
-                aria-expanded={menuOpen}
-                onPress={(): void => setMenuOpen(true)}
-                className="h-10 w-10 items-center justify-center rounded-lg hover:bg-neutral-100 active:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              >
-                <Text className="text-2xl font-bold text-neutral-900">⋯</Text>
-              </Pressable>
+              <View>
+                <Button variant="text" onPress={handleAuth}>{user ? "Sign Out" : "Sign In"}</Button>
+                {authError && (
+                  <Text accessibilityRole="alert" className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-red-200 bg-white p-3 text-sm text-red-700 shadow-lg">
+                    {authError}
+                  </Text>
+                )}
+              </View>
             ) : (
               <Button
                 variant="text"
@@ -164,10 +176,16 @@ export const NavigationHeader = ({
         </View>
       </SafeAreaView>
       <Modal
-        visible={menuOpen}
+        visible={menuOpen && !compactWebHeader}
         transparent
         animationType="slide"
         onRequestClose={(): void => setMenuOpen(false)}
+        onDismiss={(): void => {
+          if (pendingAuth.current) {
+            pendingAuth.current = false;
+            openAuthDialog();
+          }
+        }}
       >
         <View className="flex-1 justify-end bg-black/40">
           <Pressable
@@ -181,7 +199,7 @@ export const NavigationHeader = ({
             accessibilityViewIsModal
             className="rounded-t-2xl bg-white"
           >
-            <View className="gap-5 px-5 pb-6 pt-4">
+            <View testID="header-sheet-menu" className="gap-5 px-5 pb-6 pt-4">
               <View
                 accessible={false}
                 className="h-1 w-10 self-center rounded-full bg-neutral-200"

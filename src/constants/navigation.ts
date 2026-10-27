@@ -15,7 +15,7 @@ export const APP_TABS: readonly AppTab[] = [
 
 export const PAGE_SUBTITLES: Readonly<Record<string, string>> = {
   "Sign In": "Welcome back to the table.",
-  "Sign Up": "Create your club account.",
+  Register: "Create your club account.",
   "Reset password": "Get back into your account.",
   "Check your email": "Your next step is in your inbox.",
   "Your bookings": "A place at the table, all day.",

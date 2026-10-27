@@ -104,7 +104,7 @@ export const createMockAuthService = ({
         await write(state);
         if (attempts.count >= MAX_ATTEMPTS) throw resetRequired();
         const remaining: number = MAX_ATTEMPTS - attempts.count;
-        throw new AuthError("invalid-credentials", `Email or password is incorrect. ${remaining} ${remaining === 1 ? "attempt" : "attempts"} remaining.`, remaining);
+        throw new AuthError("invalid-credentials", "Email or password is incorrect.", remaining);
       }
       state.attempts = state.attempts.filter((entry: FailedAttempts): boolean => entry.email !== normalized);
       state.session = { userId: account.user.id, expiresAt: now() + SESSION_LIFETIME_MS };
@@ -128,7 +128,7 @@ export const createMockAuthService = ({
       const user: AuthUser = {
         id: `mock-${salt}`,
         email,
-        displayName: `${input.firstName.trim()} ${input.surname.trim()}`,
+        displayName: input.displayName.trim(),
       };
       state.accounts.push({ user, salt, passwordHash: await passwords.hash(input.password, salt) });
       await write(state);

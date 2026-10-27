@@ -23,6 +23,28 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+### Local authentication API
+
+Authentication uses the connected `ClubBooking` backend at `https://localhost:7145` by default.
+To use another URL, copy `.env.example` to `.env.local` and set `EXPO_PUBLIC_API_BASE_URL`, then fully reload the app.
+Start the API with its HTTPS launch profile and trust its local development certificate in your browser.
+The backend must enable CORS for the exact frontend origin, allowing JSON POSTs and the `Authorization` header.
+
+Browser sign-in persists bearer tokens in localStorage; iOS and Android use Expo SecureStore, including in Expo Go.
+Only access/refresh tokens and access expiry are saved, scoped to the API URL. An empty store starts as a guest without contacting the API.
+Sessions restore through `/auth/me` and `/auth/refresh`; sign-out awaits deletion of the saved tokens.
+Confirmation/reset link consumption is pending.
+
+For Expo Go on a physical device, set `EXPO_PUBLIC_API_BASE_URL` to an API address reachable from that device.
+`localhost` refers to the device itself, and the computer's HTTPS development certificate may not be trusted there.
+SecureStore is bundled in Expo Go; restart Metro and reload after installing dependencies. Existing custom development builds need rebuilding to include it.
+
+Sign In and Register share a centered, scrollable popup with a blurred backdrop. Tabs preserve email/name entries and clear passwords.
+After registration, the popup switches to Sign In with a confirmation-email notice. Reset password stays within the popup.
+Verify popup behavior with `node scripts/verify-auth-dialog.cjs`.
+
+Verify authentication with `node scripts/verify-api-auth.cjs` (API adapter) and `node scripts/verify-auth.cjs` (validation/mock regression checks).
+
 You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Get a fresh project

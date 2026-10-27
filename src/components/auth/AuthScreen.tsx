@@ -33,7 +33,6 @@ export const AuthScreen = ({ title, children, busy = false, error }: AuthScreenP
             {error && <Text accessibilityRole="alert" className="text-sm text-red-700">{error}</Text>}
             {busy && <ActivityIndicator accessibilityLabel="Please wait" />}
             {children}
-            <Text className="text-sm text-neutral-500">Demo mode. Accounts are local to this device and emails are not sent.</Text>
           </View>
           <View className="h-36" />
         </ScrollView>

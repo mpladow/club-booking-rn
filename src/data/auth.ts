@@ -9,13 +9,15 @@ export interface SignUpInput {
   email: string;
   firstName: string;
   surname: string;
+  displayName: string;
   password: string;
   passwordConfirmation: string;
 }
 
 export type AuthField = keyof SignUpInput;
 export type AuthFieldErrors = Partial<Record<AuthField, string>>;
-export type AuthErrorCode = "invalid-credentials" | "reset-required" | "email-exists" | "validation";
+export type AuthErrorCode = "invalid-credentials" | "reset-required" | "email-exists" | "validation"
+  | "network" | "storage" | "service" | "rate-limited" | "session-expired";
 
 export class AuthError extends Error {
   constructor(
@@ -28,7 +30,7 @@ export class AuthError extends Error {
   }
 }
 
-// The UI depends on this contract so the mock can be replaced by an API adapter.
+// The UI depends on this contract; the app supplies the real API adapter.
 // Email-link consumption is intentionally excluded until the link contract is supplied.
 export interface AuthService {
   restoreSession: () => Promise<AuthUser | null>;
@@ -45,11 +47,11 @@ export const emailError = (email: string): string | undefined =>
     ? undefined
     : "Enter a valid email address.";
 
-export const PASSWORD_HELP: string = "Use 12–128 characters, including a number and a symbol. Uppercase and lowercase letters are optional.";
+export const PASSWORD_HELP: string = "Use 12–128 characters, including an uppercase letter, a lowercase letter, a number and a symbol.";
 export const passwordError = (password: string): string | undefined =>
-  password.length >= 12 && password.length <= 128 && /[0-9]/.test(password) && /[^a-zA-Z0-9\s]/.test(password)
+  password.length >= 12 && password.length <= 128 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[^a-zA-Z0-9\s]/.test(password)
     ? undefined
-    : "Use 12–128 characters with at least one number and one symbol.";
+    : PASSWORD_HELP;
 
 export const validateSignUp = (input: SignUpInput): AuthFieldErrors => {
   const errors: AuthFieldErrors = {};
@@ -60,8 +62,8 @@ export const validateSignUp = (input: SignUpInput): AuthFieldErrors => {
     errors.firstName = "Enter a first name of 100 characters or fewer.";
   if (!input.surname.trim() || input.surname.trim().length > 100)
     errors.surname = "Enter a surname of 100 characters or fewer.";
-  if (`${input.firstName.trim()} ${input.surname.trim()}`.length > 200)
-    errors.surname = "Use 200 characters or fewer for your full name.";
+  if (!input.displayName.trim() || input.displayName.trim().length > 200)
+    errors.displayName = "Enter a display name of 200 characters or fewer.";
   if (password) errors.password = password;
   if (!input.passwordConfirmation || input.password !== input.passwordConfirmation)
     errors.passwordConfirmation = "Passwords must match.";
