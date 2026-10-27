@@ -1,5 +1,5 @@
 // File: src/app/create-booking.tsx
-import { router, Stack, usePreventRemove } from "expo-router";
+import { Redirect, router, Stack, usePreventRemove } from "expo-router";
 import { useRef, useState, type ReactElement } from "react";
 import {
   KeyboardAvoidingView,
@@ -27,6 +27,7 @@ import { HeaderScrollInset } from "@/components/navigation-header";
 import { ScreenHeading } from "@/components/screen-heading";
 import { useScreenScroll } from "@/hooks/use-header-scroll";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
+import { useAuth } from "@/hooks/use-auth";
 type Step = 0 | 1 | 2 | 3;
 const TITLES: readonly string[] = [
   "Select date",
@@ -50,7 +51,7 @@ const ToggleRow = ({
     <Switch accessibilityLabel={label} value={value} onValueChange={onChange} />
   </View>
 );
-const CreateBookingScreen = (): ReactElement => {
+const BookingForm = (): ReactElement => {
   const onScroll = useScreenScroll();
   const wide = useWideNavigation();
   const constrainContent: boolean = Platform.OS === "web" && wide;
@@ -310,6 +311,11 @@ const CreateBookingScreen = (): ReactElement => {
       </Modal>
     </SafeAreaView>
   );
+};
+
+const CreateBookingScreen = (): ReactElement => {
+  const { user } = useAuth();
+  return user ? <BookingForm /> : <Redirect href="/account/sign-in" />;
 };
 
 export default CreateBookingScreen;

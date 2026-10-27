@@ -1,5 +1,5 @@
 // File: src/components/navigation-header.tsx
-import { type NativeStackHeaderProps } from "expo-router";
+import { router, type NativeStackHeaderProps } from "expo-router";
 import { type BottomTabHeaderProps } from "expo-router/js-tabs";
 import { useState, type ReactElement } from "react";
 import { Modal, Platform, Pressable, Text, View } from "react-native";
@@ -9,6 +9,8 @@ import { HeaderNavigation } from "@/components/navigation-tabs";
 import { CLUB_NAME, PAGE_SUBTITLES } from "@/constants/navigation";
 import { useHeaderOpacity } from "@/hooks/use-header-scroll";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
+import { useAuth } from "@/hooks/use-auth";
+import { authErrorMessage } from "@/data/auth";
 
 const OPACITY_CLASSES: readonly string[] = [
   "opacity-0",
@@ -47,6 +49,24 @@ export const NavigationHeader = ({
   const wide = useWideNavigation();
   const compactWebHeader: boolean = Platform.OS === "web" && wide;
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const { user, signOut } = useAuth();
+  const handleAuth = async (): Promise<boolean> => {
+    setAuthError(null);
+    try {
+      if (user) {
+        await signOut();
+        router.replace("/");
+      } else {
+        router.navigate("/account/sign-in");
+      }
+      setMenuOpen(false);
+      return !user;
+    } catch (failure: unknown) {
+      setAuthError(authErrorMessage(failure));
+      return false;
+    }
+  };
   return (
     <View testID="navigation-header">
       <View
@@ -172,17 +192,9 @@ export const NavigationHeader = ({
               >
                 {title} menu
               </Text>
-              <Text className="text-sm text-neutral-500">
-                Menu actions will appear here.
-              </Text>
-              <View
-                accessible={false}
-                importantForAccessibility="no-hide-descendants"
-                className="gap-3"
-              >
-                <View className="h-12 rounded-xl bg-neutral-100" />
-                <View className="h-12 rounded-xl bg-neutral-100" />
-              </View>
+              {user && <Text className="text-sm text-neutral-500">Signed in as {user.displayName}</Text>}
+              {authError && <Text accessibilityRole="alert" className="text-sm text-red-700">{authError}</Text>}
+              <Button onPress={handleAuth}>{user ? "Sign Out" : "Sign In"}</Button>
               <Button
                 variant="outlined"
                 onPress={(): void => setMenuOpen(false)}

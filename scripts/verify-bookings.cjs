@@ -27,7 +27,7 @@ const load = () => {
 };
 (async () => {
   const api = load();
-  const first = await api.bookingsRepository.list();
+  const first = await api.bookingsRepository.list(api.CURRENT_USER_ID);
   assert.equal(first.length, 1, 'Only the current user seed is listed');
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM mock_bookings').get().count, 2);
   const booking = { ...first[0], id: 'test-save', game: "Player's game", createdAt: '2099-01-01T00:00:00Z', status: 'pending' };
@@ -39,7 +39,8 @@ const load = () => {
   assert.equal(api.validDraft({ ...booking, table: 5 }), false);
   await api.bookingsRepository.create(booking);
   await api.bookingsRepository.create({ ...booking, id: 'past', date: '2000-01-01' });
-  const reloaded = await load().bookingsRepository.list();
+  const reloaded = await load().bookingsRepository.list(api.CURRENT_USER_ID);
+  assert.equal((await api.bookingsRepository.list('another-account')).length, 0, 'Another signed-in account cannot read these bookings');
   assert.equal(reloaded.length, 2, 'Reload excludes past bookings and does not reseed');
   assert.equal(reloaded[0].id, booking.id, 'Newest first');
   assert.equal(reloaded[0].game, booking.game, 'Bound SQL preserves apostrophes');

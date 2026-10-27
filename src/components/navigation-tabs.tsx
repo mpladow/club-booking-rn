@@ -55,8 +55,8 @@ export const HeaderNavigation = ({
   inline?: boolean;
 }): ReactElement => {
   const pathname = usePathname();
-  const selectedTab: AppTab["name"] =
-    pathname === "/settings" ? "settings" : "index";
+  const selectedTab: AppTab["name"] | null =
+    pathname.startsWith("/account") ? null : pathname === "/settings" ? "settings" : "index";
 
   return (
     <View

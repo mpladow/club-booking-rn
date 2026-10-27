@@ -16,7 +16,7 @@ export interface Booking extends BookingDraft {
   status: "pending" | "confirmed" | "failed";
 }
 export interface BookingsRepository {
-  list: () => Promise<Booking[]>;
+  list: (userId: string) => Promise<Booking[]>;
   create: (booking: Booking) => Promise<void>;
 }
 export const today = (): string =>
@@ -95,11 +95,11 @@ const getDatabase = async (): Promise<SQLiteDatabase> => {
   return database;
 };
 export const bookingsRepository: BookingsRepository = {
-  list: async (): Promise<Booking[]> => {
+  list: async (userId: string): Promise<Booking[]> => {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{ payload: string }>(
       "SELECT payload FROM mock_bookings WHERE user_id = ? ORDER BY created_at DESC",
-      CURRENT_USER_ID,
+      userId,
     );
     return rows
       .map(

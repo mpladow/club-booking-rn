@@ -6,6 +6,7 @@ import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { renderNavigationHeader } from "@/components/navigation-header";
 import { NavigationTab } from "@/components/navigation-tabs";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
+import { useAuth } from "@/hooks/use-auth";
 
 const FloatingTabBar = ({
   state,
@@ -19,7 +20,8 @@ const FloatingTabBar = ({
     className="absolute bottom-4 left-5 right-5 rounded-2xl border border-neutral-200 bg-white shadow-lg"
   >
     <View className="flex-row gap-2 p-2">
-      {state.routes.map((route: BottomTabBarProps["state"]["routes"][number], index: number): ReactElement => {
+      {state.routes.map((route: BottomTabBarProps["state"]["routes"][number], index: number): ReactElement | null => {
+        if (route.name === "account") return null;
         const focused: boolean = state.index === index;
         const label: string =
           route.name === "index"
@@ -49,6 +51,7 @@ const FloatingTabBar = ({
 );
 const TabsLayout = (): ReactElement => {
   const wide = useWideNavigation();
+  const { user } = useAuth();
   return (
     <Tabs
       tabBar={(props: BottomTabBarProps): ReactElement | null =>
@@ -63,6 +66,9 @@ const TabsLayout = (): ReactElement => {
     >
       <Tabs.Screen name="index" options={{ title: "Your bookings" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
+      <Tabs.Protected guard={!user}>
+        <Tabs.Screen name="account" options={{ href: null, headerShown: false }} />
+      </Tabs.Protected>
     </Tabs>
   );
 };

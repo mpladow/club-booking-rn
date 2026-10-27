@@ -12,7 +12,6 @@ import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 import {
   bookingsRepository,
-  CURRENT_USER_ID,
   today,
   validDraft,
   type Booking,
@@ -31,11 +30,13 @@ interface BookingsState {
 const Context = createContext<BookingsState | null>(null);
 export const BookingsProvider = ({
   children,
+  userId,
 }: {
   children: ReactNode;
+  userId: string | null;
 }): ReactElement => {
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(userId));
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [failNext, setFailNext] = useState<boolean>(false);
@@ -43,10 +44,11 @@ export const BookingsProvider = ({
   const sequence = useRef<number>(0);
   const revision = useRef<number>(0);
   const refresh = async (): Promise<void> => {
+    if (!userId) return;
     setRefreshing(true);
     try {
       const startedAt = revision.current;
-      const saved = await bookingsRepository.list();
+      const saved = await bookingsRepository.list(userId);
       if (startedAt !== revision.current) {
         await refresh();
         return;
@@ -73,8 +75,11 @@ export const BookingsProvider = ({
   };
   useEffect((): (() => void) => {
     let active = true;
+    if (!userId) {
+      return (): void => { active = false; };
+    }
     void bookingsRepository
-      .list()
+      .list(userId)
       .then((saved: Booking[]): void => {
         if (active) {
           const merged = new Map<string, Booking>(
@@ -101,15 +106,16 @@ export const BookingsProvider = ({
     return (): void => {
       active = false;
     };
-  }, []);
+  }, [userId]);
   const submit = (draft: BookingDraft): void => {
+    if (!userId) throw new Error("Sign in to create a booking.");
     if (!validDraft(draft))
       throw new Error("Please check the booking details.");
     const booking: Booking = {
       ...draft,
       game: draft.game.trim(),
       id: `booking-${Date.now()}-${++sequence.current}`,
-      userId: CURRENT_USER_ID,
+      userId,
       createdAt: new Date().toISOString(),
       status: "pending",
     };
