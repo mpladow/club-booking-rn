@@ -3,6 +3,7 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  clubId: string | null;
 }
 
 export interface SignUpInput {
@@ -17,7 +18,7 @@ export interface SignUpInput {
 export type AuthField = keyof SignUpInput;
 export type AuthFieldErrors = Partial<Record<AuthField, string>>;
 export type AuthErrorCode = "invalid-credentials" | "reset-required" | "email-exists" | "validation"
-  | "network" | "storage" | "service" | "rate-limited" | "session-expired";
+  | "network" | "storage" | "service" | "rate-limited" | "session-expired" | "club-selection-required";
 
 export class AuthError extends Error {
   constructor(
@@ -30,11 +31,18 @@ export class AuthError extends Error {
   }
 }
 
+export interface ClubChoice { id: string; name: string }
+export class ClubSelectionError extends AuthError {
+  constructor(public readonly clubs: ClubChoice[]) {
+    super("club-selection-required", "Choose a club to continue signing in.");
+  }
+}
+
 // The UI depends on this contract; the app supplies the real API adapter.
 // Email-link consumption is intentionally excluded until the link contract is supplied.
 export interface AuthService {
   restoreSession: () => Promise<AuthUser | null>;
-  signIn: (email: string, password: string) => Promise<AuthUser>;
+  signIn: (email: string, password: string, clubId?: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   signUp: (input: SignUpInput) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;

@@ -129,6 +129,7 @@ export const createMockAuthService = ({
         id: `mock-${salt}`,
         email,
         displayName: input.displayName.trim(),
+        clubId: null,
       };
       state.accounts.push({ user, salt, passwordHash: await passwords.hash(input.password, salt) });
       await write(state);

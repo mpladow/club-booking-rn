@@ -29,7 +29,8 @@ const load = createLoader();
 const { createApiAuthService } = load('api-auth');
 const { AuthError } = load('auth');
 const baseUrl = 'https://localhost:7145';
-const user = { userId: 'member-id', email: 'member@example.com', displayName: 'Table Captain', firstName: 'Alex', surname: 'Smith', emailConfirmed: false };
+const clubId = '61af7d36-2b80-4c9f-a314-000000000010';
+const user = { userId: 'member-id', email: 'member@example.com', displayName: 'Table Captain', firstName: 'Alex', surname: 'Smith', emailConfirmed: false, clubId };
 const tokens = (suffix = '1') => ({ tokenType: 'Bearer', accessToken: `opaque-access-${suffix}`, refreshToken: `opaque-refresh-${suffix}`, expiresIn: 900 });
 const input = { email: ' Member@Example.com ', firstName: ' Alex ', surname: ' Smith ', displayName: ' Table Captain ', password: 'TestPassword123!', passwordConfirmation: 'TestPassword123!' };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -88,14 +89,23 @@ const fixture = () => {
 
   f.handle((call) => call.path === '/auth/login' ? json(tokens()) : json(user));
   const signedIn = await service.signIn(input.email, input.password);
-  assert.deepEqual({ ...signedIn }, { id: user.userId, email: user.email, displayName: user.displayName });
+  assert.deepEqual({ ...signedIn }, { id: user.userId, email: user.email, displayName: user.displayName, clubId });
   assert.deepEqual(f.calls[3].body, { email: 'member@example.com', password: input.password });
   assert.equal(f.calls[4].headers.Authorization, 'Bearer opaque-access-1');
-  assert.deepEqual(Object.keys(JSON.parse(f.saved())).sort(), ['accessToken', 'expiresAt', 'refreshToken']);
+  assert.deepEqual(Object.keys(JSON.parse(f.saved())).sort(), ['accessToken', 'clubId', 'expiresAt', 'refreshToken']);
+  assert.equal(JSON.parse(f.saved()).clubId, clubId, '/auth/me club context is persisted at login');
   assert.equal(f.saved().includes(input.password), false);
+  f.handle((call) => {
+    assert.equal(call.path, '/games');
+    assert.equal(call.headers.Authorization, 'Bearer opaque-access-1');
+    return json([{ id: 'catalogue-game', name: 'Example', ordering: 1 }]);
+  });
+  assert.equal((await service.get('/games'))[0].name, 'Example', 'Catalogue reads use authenticated GET outside /auth');
+  f.handle(() => json(user));
   service = f.create();
   await service.restoreSession();
   assert.equal(f.calls.at(-1).path, '/auth/me', 'A valid saved session survives recreation');
+  assert.equal(JSON.parse(f.saved()).clubId, clubId);
 
   f.advance(900_000);
   f.handle((call) => call.path === '/auth/refresh' ? json(tokens('2')) : json(user));
@@ -105,6 +115,7 @@ const fixture = () => {
   assert.deepEqual(f.calls.at(-2).body, { refreshToken: 'opaque-refresh-1' });
   assert.equal(f.calls.at(-1).headers.Authorization, 'Bearer opaque-access-2');
   assert.equal(JSON.parse(f.saved()).refreshToken, 'opaque-refresh-2');
+  assert.equal(JSON.parse(f.saved()).clubId, clubId, 'Club context survives refresh');
 
   let profileCalls = 0;
   f.handle((call) => {
@@ -225,7 +236,8 @@ const fixture = () => {
   await nativeService.signIn(input.email, input.password);
   assert.equal(nativeValues.size, 1);
   const [nativeKey, nativeRaw] = [...nativeValues][0];
-  assert.deepEqual(Object.keys(JSON.parse(nativeRaw)).sort(), ['accessToken', 'expiresAt', 'refreshToken']);
+  assert.deepEqual(Object.keys(JSON.parse(nativeRaw)).sort(), ['accessToken', 'clubId', 'expiresAt', 'refreshToken']);
+  assert.equal(JSON.parse(nativeRaw).clubId, clubId, 'Native SecureStore retains club context');
   assert.equal(nativeRaw.includes(input.password), false, 'Native storage never receives passwords');
   nativeService = createLoader(nativeGlobals, nativeOptions)('auth-service').authService;
   assert.equal((await nativeService.restoreSession()).id, user.userId, 'Native sessions survive service recreation');
@@ -287,6 +299,64 @@ const fixture = () => {
   await readLogout;
   assert.equal(await pendingRestore, null, 'Sign-out cancels an in-flight native read');
   assert.equal(readRace.calls.length, 0);
+
+  const games = fixture();
+  games.seed(JSON.stringify({ accessToken: 'old', refreshToken: 'refresh', expiresAt: 0 }));
+  games.handle((call) => {
+    if (call.path === '/auth/refresh') return json(tokens('games'));
+    if (call.path === '/auth/me') return json(user);
+    assert.equal(call.path, '/games');
+    assert.equal(call.headers.Authorization, 'Bearer opaque-access-games');
+    return json([]);
+  });
+  const gamesService = games.create();
+  await gamesService.get('/games');
+  assert.deepEqual(games.calls.map((call) => call.path), ['/auth/refresh', '/auth/me', '/games']);
+  games.handle((call) => {
+    if (call.path === '/auth/refresh') return json(tokens('retry'));
+    if (call.headers.Authorization !== 'Bearer opaque-access-retry') return new Response(null, { status: 401 });
+    if (call.path === '/auth/me') return json(user);
+    assert.equal(call.headers.Authorization, 'Bearer opaque-access-retry');
+    return json([]);
+  });
+  await gamesService.get('/games');
+  const gameReply = deferred();
+  const gameStarted = deferred();
+  games.handle(() => { gameStarted.resolve(); return gameReply.promise; });
+  const pendingGames = gamesService.get('/games');
+  const cancelledGames = assert.rejects(pendingGames, (error) => error.code === 'session-expired');
+  await gameStarted.promise;
+  await gamesService.signOut();
+  gameReply.resolve(json([]));
+  await cancelledGames;
+  await assert.rejects(gamesService.get('/games'), (error) => error.code === 'session-expired');
+
+  const context = fixture();
+  const contextService = context.create();
+  context.seed(JSON.stringify({ accessToken: 'old', refreshToken: 'old', expiresAt: 9_000_000 }));
+  context.handle(() => json(user));
+  assert.equal((await contextService.restoreSession()).clubId, clubId, 'Legacy sessions backfill club context');
+  assert.equal(JSON.parse(context.saved()).clubId, clubId);
+  context.handle(() => json({ ...user, clubId: null }));
+  assert.equal((await contextService.restoreSession()).clubId, null, 'Revoked/unselected club clears stale routing context');
+  assert.equal(JSON.parse(context.saved()).clubId, null);
+  context.handle(() => json({ code: 'ClubSelectionRequired', clubs: [{ id: clubId, name: 'Test Club' }] }, 409));
+  await assert.rejects(contextService.signIn(input.email, input.password), (error) => error.code === 'club-selection-required' && error.clubs[0].id === clubId);
+  context.handle((call) => {
+    if (call.path === '/auth/login') { assert.equal(call.body.clubId, clubId); return json(tokens()); }
+    return json(user);
+  });
+  await contextService.signIn(input.email, input.password, clubId);
+  context.handle((call) => {
+    assert.equal(call.method, 'POST');
+    assert.equal(call.path, `/clubs/${clubId}/bookings`);
+    assert.deepEqual(call.body, { requestId: 'unchanged' });
+    assert.equal(call.headers.Authorization, 'Bearer opaque-access-1');
+    return json({ status: 'Pending' }, 202);
+  });
+  assert.equal((await contextService.post(`/clubs/${clubId}/bookings`, { requestId: 'unchanged' })).status, 'Pending');
+  context.handle(() => json({ code: 'TableUnavailable' }, 409));
+  await assert.rejects(contextService.post(`/clubs/${clubId}/bookings`, {}), (error) => error.serverCode === 'TableUnavailable');
 
   console.log('API auth checks passed: API contract, browser/native persistence, empty native guest startup, refresh/retry, asynchronous storage and logout races, invalid sessions, validation, outages and storage errors.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

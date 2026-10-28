@@ -11,7 +11,7 @@ const compile = (file) => ts.transpileModule(fs.readFileSync(file, 'utf8'), {
 }).outputText;
 const authModule = { exports: {} };
 vm.runInNewContext(compile('src/data/auth.ts'), { exports: authModule.exports });
-const { AuthError } = authModule.exports;
+const { AuthError, ClubSelectionError } = authModule.exports;
 const pending = () => { let resolve; let reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
 const resetMessage = 'An password reset has been sent to the email provided.';
 
@@ -178,5 +178,22 @@ const mount = (initialTab = 'sign-in') => {
   await registering;
   assert.equal(late.lateUpdates(), 0, 'A dismissed request cannot change or reopen the popup');
   assert.deepEqual(late.navigation, []);
-  console.log('Auth popup checks passed: tab switching, preserved email/names, cleared passwords, registration/confirmation, resend, reset validation/acknowledgement/failure, duplicate suppression, sign-in, dismissal and outstanding-request cleanup.');
+  const clubs = mount();
+  clubs.change('Email', 'member@example.com');
+  clubs.change('Password', 'SecretPassword123!');
+  const clubId = '61af7d36-2b80-4c9f-a314-000000000010';
+  clubs.auth.signIn = async (...args) => {
+    clubs.calls.signIn.push(args);
+    if (!args[2]) throw new ClubSelectionError([{ id: clubId, name: 'Test Club' }]);
+  };
+  clubs.render();
+  await clubs.press('Sign In');
+  clubs.render();
+  assert.equal(clubs.hasText('Choose your club'), true);
+  await clubs.press('Test Club');
+  await clubs.press('Sign In');
+  assert.equal(clubs.calls.signIn.at(-1)[2], clubId);
+  assert.equal(clubs.closed(), 1, 'Selecting a membership completes sign-in');
+
+  console.log('Auth popup checks passed: tabs, preserved fields, registration, email requests, duplicate suppression, sign-in, club selection, dismissal and outstanding-request cleanup.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

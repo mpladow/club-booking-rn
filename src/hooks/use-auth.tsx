@@ -19,7 +19,7 @@ interface AuthState {
   flowEmail: string;
   emailPurpose: EmailPurpose;
   rememberEmail: (email: string) => void;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, clubId?: string) => Promise<void>;
   signOut: () => Promise<void>;
   signUp: (input: SignUpInput) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
@@ -52,8 +52,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }): ReactElemen
       .finally((): void => { if (active) setLoading(false); });
     return (): void => { active = false; };
   }, []);
-  const signIn = async (email: string, password: string): Promise<void> => {
-    const signedIn: AuthUser = await authService.signIn(email, password);
+  const signIn = async (email: string, password: string, clubId?: string): Promise<void> => {
+    const signedIn: AuthUser = await authService.signIn(email, password, clubId);
     setFlowEmail(normalizeEmail(email));
     setUser(signedIn);
     successHaptic();

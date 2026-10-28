@@ -31,7 +31,7 @@ Start the API with its HTTPS launch profile and trust its local development cert
 The backend must enable CORS for the exact frontend origin, allowing JSON POSTs and the `Authorization` header.
 
 Browser sign-in persists bearer tokens in localStorage; iOS and Android use Expo SecureStore, including in Expo Go.
-Only access/refresh tokens and access expiry are saved, scoped to the API URL. An empty store starts as a guest without contacting the API.
+Access/refresh tokens, access expiry, and the selected `clubId` from `/auth/me` are saved, scoped to the API URL. An empty store starts as a guest without contacting the API.
 Sessions restore through `/auth/me` and `/auth/refresh`; sign-out awaits deletion of the saved tokens.
 Confirmation/reset link consumption is pending.
 
@@ -44,6 +44,25 @@ After registration, the popup switches to Sign In with a confirmation-email noti
 Verify popup behavior with `node scripts/verify-auth-dialog.cjs`.
 
 Verify authentication with `node scripts/verify-api-auth.cjs` (API adapter) and `node scripts/verify-auth.cjs` (validation/mock regression checks).
+
+Create Booking loads its game dropdown from authenticated `GET /games`. A game is required;
+choosing Other reveals a required custom name (up to 200 characters). Dates and tables come from
+the selected club's timeslot/availability endpoints. Confirm sends `POST /clubs/{clubId}/bookings`
+with real IDs and a stable request UUID; transport retries reuse the UUID until the form changes.
+The form stays open on a submission failure. Accepted reservations appear on the main screen;
+pending bookings are polled until the API reports a terminal outcome. Booking data comes from
+the API; existing local SQLite mock records are no longer used. Refresh/reload restores server bookings.
+The backend booking worker (`--bookings`) must run to publish outbox messages to Service Bus
+and complete reservations. The app never connects directly to Service Bus.
+The backend worker now supports `BookingServiceBus:TransportType` and `BookingServiceBus:TryTimeoutSeconds`.
+Local worker User Secrets use `AmqpWebSockets` and `15` after a successful read-only broker connection check;
+the original AMQP/TCP path timed out. Other environments retain the backend defaults unless configured.
+Existing sessions backfill club context from `/auth/me`; accounts with no selected club cannot submit.
+If login returns `ClubSelectionRequired`, the sign-in popup displays the returned memberships
+and resubmits credentials with the chosen club ID. Sign-out removes the persisted club context with the tokens.
+Verify the booking API contract with `node scripts/verify-bookings.cjs` and form submission/polling
+with `node scripts/verify-booking-flow.cjs`.
+Verify the dropdown and catalogue handling with `node scripts/verify-games.cjs`.
 
 You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 

@@ -1,26 +1,32 @@
 // File: src/app/create-booking.tsx
 import { Redirect, router, Stack, usePreventRemove } from "expo-router";
-import { useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
   KeyboardAvoidingView,
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { BookingCalendar } from "@/components/booking-calendar";
+import { GameSelect } from "@/components/game-select";
+import { gameSelectionError } from "@/data/game-selection";
 import { Button } from "@/components/ui/Button";
 import {
   dateLabel,
-  TABLES,
+  bookingErrorMessage,
+  createRequestId,
+  sessionLabel,
   today,
   validDraft,
   type BookingDraft,
+  type AvailableTable,
+  type Timeslot,
 } from "@/data/bookings";
 import { useBookings } from "@/hooks/use-bookings";
 import { HeaderScrollInset } from "@/components/navigation-header";
@@ -28,6 +34,7 @@ import { ScreenHeading } from "@/components/screen-heading";
 import { useScreenScroll } from "@/hooks/use-header-scroll";
 import { useWideNavigation } from "@/hooks/use-wide-navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { useBookingOptions } from "@/hooks/use-booking-options";
 type Step = 0 | 1 | 2 | 3;
 const TITLES: readonly string[] = [
   "Select date",
@@ -55,59 +62,85 @@ const BookingForm = (): ReactElement => {
   const onScroll = useScreenScroll();
   const wide = useWideNavigation();
   const constrainContent: boolean = Platform.OS === "web" && wide;
-  const { submit } = useBookings();
+  const { submit, club, loading, error: loadError, refresh } = useBookings();
+  const { user } = useAuth();
   const [step, setStep] = useState<Step>(0);
-  const [draft, setDraft] = useState<BookingDraft>({
+  const [draft, setDraft] = useState<BookingDraft>(() => ({
+    requestId: createRequestId(),
+    timeslotId: "",
+    tableId: "",
+    startsAtUtc: "",
+    endsAtUtc: "",
     date: "",
-    table: 0,
+    table: "",
     game: "",
+    gameId: "",
+    otherGameName: "",
     spectators: false,
     demo: false,
-  });
+  }));
+  const options = useBookingOptions(user?.clubId ?? null, draft.timeslotId);
   const [error, setError] = useState<string | null>(null);
   const [discard, setDiscard] = useState<boolean>(false);
   const [finished, setFinished] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const mounted = useRef<boolean>(true);
+  useEffect((): (() => void) => {
+    mounted.current = true;
+    return (): void => { mounted.current = false; };
+  }, []);
   const submitted = useRef<boolean>(false);
   const pendingLeave = useRef<(() => void) | null>(null);
   const disablePrevention = usePreventRemove(!finished, ({ repeat }): void => {
+    if (submitted.current) return;
     pendingLeave.current = repeat;
     setDiscard(true);
   });
   const update = (patch: Partial<BookingDraft>): void => {
     setDraft(
-      (current: BookingDraft): BookingDraft => ({ ...current, ...patch }),
+      (current: BookingDraft): BookingDraft => ({ ...current, ...patch, requestId: createRequestId() }),
     );
     setError(null);
   };
   const next = (): boolean => {
-    if (step === 0 && (!draft.date || draft.date < today())) {
-      setError("Choose today or a future date.");
+    if (step === 0 && !options.timeslots.some((slot: Timeslot): boolean => slot.id === draft.timeslotId && slot.date === draft.date)) {
+      setError("Choose an available date and session.");
       return false;
     }
-    if (step === 1 && !TABLES.includes(draft.table)) {
-      setError("Choose one table.");
+    if (step === 1 && !options.tables.some((table: AvailableTable): boolean => table.id === draft.tableId)) {
+      setError("Choose an available table.");
       return false;
     }
-    if (step === 2 && draft.game.length > 50) {
-      setError("Use 50 characters or fewer.");
+    const gameError: string | null = gameSelectionError(draft);
+    if (step === 2 && gameError) {
+      setError(gameError);
       return false;
     }
     setError(null);
     setStep((step + 1) as Step);
     return true;
   };
-  const confirm = (): boolean => {
+  const confirm = async (): Promise<boolean> => {
     if (submitted.current) return false;
     if (!validDraft(draft)) {
       setError("Check your date, table and game before confirming.");
       return false;
     }
     submitted.current = true;
-    submit(draft);
-    setFinished(true);
-    disablePrevention();
-    router.replace("/");
-    // Submission haptics run only when the asynchronous save succeeds.
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submit({ ...draft, otherGameName: draft.otherGameName.trim() });
+      if (!mounted.current) return false;
+      setFinished(true);
+      disablePrevention();
+      router.replace("/");
+    } catch (failure: unknown) {
+      submitted.current = false;
+      if (mounted.current) setError(bookingErrorMessage(failure));
+    } finally {
+      if (mounted.current) setSubmitting(false);
+    }
     return false;
   };
   const leave = (): void => {
@@ -118,8 +151,8 @@ const BookingForm = (): ReactElement => {
     else router.replace("/");
   };
   const summary: { label: string; value: string; step: Step }[] = [
-    { label: "Date", value: `${dateLabel(draft.date)} · All day`, step: 0 },
-    { label: "Table", value: `Table ${draft.table}`, step: 1 },
+    { label: "Date", value: draft.timeslotId && club ? `${dateLabel(draft.date)} · ${sessionLabel(draft, club.timeZoneId)}` : "Not selected", step: 0 },
+    { label: "Table", value: draft.table, step: 1 },
     { label: "Game", value: draft.game.trim() || "Not specified", step: 2 },
     {
       label: "Spectators encouraged?",
@@ -154,7 +187,7 @@ const BookingForm = (): ReactElement => {
                 <Text className="text-sm text-neutral-500">
                   Step {step + 1} of 4
                 </Text>
-                <Button variant="text" onPress={(): void => setDiscard(true)}>
+                <Button variant="text" disabled={submitting} onPress={(): void => setDiscard(true)}>
                   Close
                 </Button>
               </View>
@@ -168,50 +201,62 @@ const BookingForm = (): ReactElement => {
                   ),
                 )}
               </View>
-              {step === 0 && (
+              {!user?.clubId && <Text accessibilityRole="alert" className="mb-4 text-sm text-amber-700">No club is selected for your account. Sign in again with a club membership before booking.</Text>}
+              {loading && <ActivityIndicator accessibilityLabel="Loading club" />}
+              {loadError && !club && (
+                <View className="mb-4 gap-2">
+                  <Text accessibilityRole="alert" className="text-sm text-amber-700">{loadError}</Text>
+                  <Button variant="outlined" onPress={refresh}>Retry club</Button>
+                </View>
+              )}
+              {step === 0 && club && (
+                <View className="gap-4">
+                {options.loadingDates && <ActivityIndicator accessibilityLabel="Loading available dates" />}
+                {options.datesError && <Text accessibilityRole="alert" className="text-sm text-amber-700">{options.datesError}</Text>}
+                {!options.loadingDates && !options.datesError && !options.timeslots.length && <Text className="text-base text-neutral-500">There are no bookable sessions available.</Text>}
+                <Button variant="text" disabled={options.loadingDates} onPress={options.retry}>Refresh available dates</Button>
                 <BookingCalendar
                   value={draft.date}
-                  onChange={(date: string): void => update({ date })}
+                  earliestDate={today(club.timeZoneId)}
+                  availableDates={options.timeslots.map((slot: Timeslot): string => slot.date)}
+                  onChange={(date: string): void => {
+                    const sessions: Timeslot[] = options.timeslots.filter((slot: Timeslot): boolean => slot.date === date);
+                    const selected: Timeslot | undefined = sessions.length === 1 ? sessions[0] : undefined;
+                    update({ date, timeslotId: selected?.id ?? "", startsAtUtc: selected?.startsAtUtc ?? "", endsAtUtc: selected?.endsAtUtc ?? "", tableId: "", table: "" });
+                  }}
                 />
+                {options.timeslots.filter((slot: Timeslot): boolean => slot.date === draft.date).map((slot: Timeslot): ReactElement => (
+                  <Button key={slot.id} variant={slot.id === draft.timeslotId ? "toggle-active" : "toggle-inactive"}
+                    onPress={(): void => update({ timeslotId: slot.id, startsAtUtc: slot.startsAtUtc, endsAtUtc: slot.endsAtUtc, tableId: "", table: "" })}>
+                    {sessionLabel(slot, club.timeZoneId)}
+                  </Button>
+                ))}
+                </View>
               )}
               {step === 1 && (
                 <View className="gap-4">
-                  {TABLES.map(
-                    (table: number): ReactElement => (
+                  {options.loadingTables && <ActivityIndicator accessibilityLabel="Loading available tables" />}
+                  {options.tablesError && <Text accessibilityRole="alert" className="text-sm text-amber-700">{options.tablesError}</Text>}
+                  {!options.loadingTables && !options.tablesError && !options.tables.length && <Text className="text-base text-neutral-500">No tables are available for this session.</Text>}
+                  <Button variant="text" disabled={options.loadingTables} onPress={options.retry}>Refresh available tables</Button>
+                  {options.tables.map(
+                    (table: AvailableTable): ReactElement => (
                       <Button
-                        key={table}
+                        key={table.id}
                         variant={
-                          draft.table === table
+                          draft.tableId === table.id
                             ? "toggle-active"
                             : "toggle-inactive"
                         }
-                        onPress={(): void => update({ table })}
-                      >{`Table ${table}`}</Button>
+                        onPress={(): void => update({ tableId: table.id, table: table.name })}
+                      >{table.name}</Button>
                     ),
                   )}
                 </View>
               )}
               {step === 2 && (
                 <View className="gap-6">
-                  <View className="gap-2">
-                    <Text
-                      nativeID="game-label"
-                      className="text-base font-medium text-neutral-900"
-                    >
-                      What game are you playing?
-                    </Text>
-                    <TextInput
-                      accessibilityLabel="What game are you playing? Optional"
-                      placeholder="Game name (optional)"
-                      value={draft.game}
-                      onChangeText={(game: string): void => update({ game })}
-                      maxLength={50}
-                      className="h-12 rounded-xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 focus:border-indigo-600"
-                    />
-                    <Text className="text-sm text-neutral-500">
-                      Optional · {draft.game.length}/50
-                    </Text>
-                  </View>
+                  <GameSelect value={draft} onChange={update} />
                   <ToggleRow
                     label="Spectators encouraged?"
                     value={draft.spectators}
@@ -234,6 +279,7 @@ const BookingForm = (): ReactElement => {
                     }): ReactElement => (
                       <Pressable
                         key={row.label}
+                        disabled={submitting}
                         accessibilityRole="button"
                         accessibilityLabel={`Edit ${row.label}: ${row.value}`}
                         onPress={(): void => setStep(row.step)}
@@ -263,12 +309,13 @@ const BookingForm = (): ReactElement => {
           </View>
         </ScrollView>
         <View className={`gap-2 px-5 py-4 ${constrainContent ? "mx-auto w-full max-w-6xl" : ""}`}>
-          <Button onPress={step === 3 ? confirm : next}>
+          <Button disabled={!club || submitting || (step === 0 && options.loadingDates) || (step === 1 && options.loadingTables)} loading={submitting} onPress={step === 3 ? confirm : next}>
             {step === 3 ? "Confirm Booking" : "Next"}
           </Button>
           {step > 0 && (
             <Button
               variant="text"
+              disabled={submitting}
               onPress={(): void => {
                 setError(null);
                 setStep((step - 1) as Step);

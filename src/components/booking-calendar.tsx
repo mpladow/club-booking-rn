@@ -8,18 +8,22 @@ const keyFor = (year: number, month: number, day: number): string =>
 export const BookingCalendar = ({
   value,
   onChange,
+  availableDates,
+  earliestDate = today(),
 }: {
   value: string;
   onChange: (date: string) => void;
+  availableDates?: readonly string[];
+  earliestDate?: string;
 }): ReactElement => {
   const [month, setMonth] = useState<Date>(
-    () => new Date(`${value || today()}T12:00:00`),
+    () => new Date(`${value || availableDates?.[0] || earliestDate}T12:00:00`),
   );
   const year = month.getFullYear();
   const index = month.getMonth();
   const start = new Date(year, index, 1).getDay();
   const count = new Date(year, index + 1, 0).getDate();
-  const earliest = today();
+  const earliest = earliestDate;
   const previousDisabled =
     keyFor(year, index, 1).slice(0, 7) <= earliest.slice(0, 7);
   const cells: (number | null)[] = Array.from(
@@ -72,7 +76,7 @@ export const BookingCalendar = ({
               .slice(row * 7, row * 7 + 7)
               .map((day: number | null, col: number): ReactElement => {
                 const date = day ? keyFor(year, index, day) : "";
-                const disabled = !day || date < earliest;
+                const disabled = !day || date < earliest || (availableDates !== undefined && !availableDates.includes(date));
                 return (
                   <Pressable
                     key={col}

@@ -1,185 +1,127 @@
 // File: src/hooks/use-bookings.tsx
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import * as Haptics from "expo-haptics";
-import { Platform } from "react-native";
-import {
-  bookingsRepository,
-  today,
-  validDraft,
-  type Booking,
-  type BookingDraft,
-} from "@/data/bookings";
+import { AppState, Platform } from "react-native";
+import { bookingErrorMessage, bookingsService, processingBooking, type Booking, type BookingClub, type BookingDraft } from "@/data/bookings";
+
 interface BookingsState {
   bookings: Booking[];
+  club: BookingClub | null;
   loading: boolean;
   refreshing: boolean;
   error: string | null;
-  failNext: boolean;
-  setFailNext: (value: boolean) => void;
   refresh: () => Promise<void>;
-  submit: (draft: BookingDraft) => void;
+  submit: (draft: BookingDraft) => Promise<void>;
 }
 const Context = createContext<BookingsState | null>(null);
-export const BookingsProvider = ({
-  children,
-  userId,
-}: {
+export const BookingsProvider = ({ children, clubId }: {
   children: ReactNode;
-  userId: string | null;
+  clubId: string | null;
 }): ReactElement => {
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState<boolean>(Boolean(userId));
+  const [club, setClub] = useState<BookingClub | null>(null);
+  const [loading, setLoading] = useState<boolean>(Boolean(clubId));
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [failNext, setFailNext] = useState<boolean>(false);
-  const transient = useRef<Booking[]>([]);
-  const sequence = useRef<number>(0);
+  const latest = useRef<Booking[]>([]);
+  const active = useRef<boolean>(true);
   const revision = useRef<number>(0);
+  const fetching = useRef<Promise<void> | null>(null);
+  const publish = useCallback((next: Booking[]): void => {
+    latest.current = next;
+    setBookings(next);
+  }, []);
+
+  const load = useCallback(async (): Promise<void> => {
+    if (!clubId) return;
+    if (fetching.current) return fetching.current;
+    const pending: Promise<void> = (async (): Promise<void> => {
+      const started: number = revision.current;
+      const processing: Booking[] = latest.current.filter(processingBooking);
+      const [saved, updates] = await Promise.all([
+        bookingsService.list(clubId),
+        Promise.all(processing.map((booking: Booking): Promise<Booking> => bookingsService.get(clubId, booking.id))),
+      ]);
+      if (!active.current || started !== revision.current) return;
+      // Terminal rejections disappear from the active list, so retain polled outcomes in this session.
+      const merged = new Map<string, Booking>(saved.map((booking: Booking): [string, Booking] => [booking.id, booking]));
+      for (const booking of latest.current.filter((item: Booking): boolean => item.status === "Rejected")) merged.set(booking.id, booking);
+      for (const booking of updates) merged.set(booking.id, booking);
+      publish([...merged.values()]);
+      setError(null);
+    })();
+    fetching.current = pending;
+    try { await pending; } finally { if (fetching.current === pending) fetching.current = null; }
+  }, [clubId, publish]);
+
+  useEffect((): (() => void) => {
+    active.current = true;
+    let cancelled: boolean = false;
+    let foreground: boolean = AppState.currentState !== "background";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reload = async (): Promise<void> => {
+      if (!clubId) return;
+      try {
+        const details: BookingClub = await bookingsService.club(clubId);
+        if (!cancelled) setClub(details);
+        await load();
+      } catch (failure: unknown) {
+        if (!cancelled) setError(bookingErrorMessage(failure));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    const poll = async (): Promise<void> => {
+      if (cancelled) return;
+      if (foreground && latest.current.some(processingBooking)) {
+        try { await load(); } catch {
+          if (!cancelled) setError("Booking status could not be checked. Pull down to retry; your reservation may still be processing.");
+        }
+      }
+      if (!cancelled) timer = setTimeout((): void => { void poll(); }, 2000);
+    };
+    if (clubId) void reload();
+    timer = setTimeout((): void => { void poll(); }, 2000);
+    const subscription = AppState.addEventListener("change", (state): void => {
+      foreground = state === "active";
+      if (foreground && !cancelled && clubId) void load().catch((): void => {
+        if (!cancelled) setError("Bookings could not be refreshed. Pull down to retry.");
+      });
+    });
+    return (): void => {
+      cancelled = true;
+      active.current = false;
+      if (timer) clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [clubId, load]);
+
   const refresh = async (): Promise<void> => {
-    if (!userId) return;
+    if (!clubId) return;
     setRefreshing(true);
     try {
-      const startedAt = revision.current;
-      const saved = await bookingsRepository.list(userId);
-      if (startedAt !== revision.current) {
-        await refresh();
-        return;
-      }
-      const merged = new Map<string, Booking>(
-        [...saved, ...transient.current].map(
-          (b: Booking): [string, Booking] => [b.id, b],
-        ),
-      );
-      setBookings(
-        [...merged.values()]
-          .filter((b: Booking): boolean => b.date >= today())
-          .sort((a: Booking, b: Booking): number =>
-            b.createdAt.localeCompare(a.createdAt),
-          ),
-      );
-      setError(null);
-    } catch {
-      setError("Bookings could not be loaded. Pull down to try again.");
+      const details: BookingClub = await bookingsService.club(clubId);
+      if (active.current) setClub(details);
+      await load();
+    } catch (failure: unknown) {
+      if (active.current) setError(bookingErrorMessage(failure));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (active.current) { setLoading(false); setRefreshing(false); }
     }
   };
-  useEffect((): (() => void) => {
-    let active = true;
-    if (!userId) {
-      return (): void => { active = false; };
-    }
-    void bookingsRepository
-      .list(userId)
-      .then((saved: Booking[]): void => {
-        if (active) {
-          const merged = new Map<string, Booking>(
-            [...saved, ...transient.current].map(
-              (b: Booking): [string, Booking] => [b.id, b],
-            ),
-          );
-          setBookings(
-            [...merged.values()]
-              .filter((b: Booking): boolean => b.date >= today())
-              .sort((a: Booking, b: Booking): number =>
-                b.createdAt.localeCompare(a.createdAt),
-              ),
-          );
-        }
-      })
-      .catch((): void => {
-        if (active)
-          setError("Bookings could not be loaded. Pull down to try again.");
-      })
-      .finally((): void => {
-        if (active) setLoading(false);
-      });
-    return (): void => {
-      active = false;
-    };
-  }, [userId]);
-  const submit = (draft: BookingDraft): void => {
-    if (!userId) throw new Error("Sign in to create a booking.");
-    if (!validDraft(draft))
-      throw new Error("Please check the booking details.");
-    const booking: Booking = {
-      ...draft,
-      game: draft.game.trim(),
-      id: `booking-${Date.now()}-${++sequence.current}`,
-      userId,
-      createdAt: new Date().toISOString(),
-      status: "pending",
-    };
-    const shouldFail = __DEV__ && failNext;
-    setFailNext(false);
+  const submit = async (draft: BookingDraft): Promise<void> => {
+    if (!clubId) throw new Error("No club is selected. Sign in again before booking.");
+    const saved: Booking = await bookingsService.create(clubId, draft);
+    if (!active.current) return;
     revision.current += 1;
-    transient.current = [booking, ...transient.current];
-    setBookings((current: Booking[]): Booking[] => [booking, ...current]);
-    void (async (): Promise<void> => {
-      try {
-        await new Promise<void>((resolve: () => void): void => {
-          setTimeout(resolve, 1800);
-        });
-        if (shouldFail) throw new Error("Simulated failure");
-        await bookingsRepository.create(booking);
-        revision.current += 1;
-        transient.current = transient.current.map(
-          (b: Booking): Booking =>
-            b.id === booking.id ? { ...b, status: "confirmed" } : b,
-        );
-        setBookings((current: Booking[]): Booking[] =>
-          current.map(
-            (b: Booking): Booking =>
-              b.id === booking.id ? { ...b, status: "confirmed" } : b,
-          ),
-        );
-        if (Platform.OS !== "web")
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-            (): void => {},
-          );
-      } catch {
-        revision.current += 1;
-        transient.current = transient.current.map(
-          (b: Booking): Booking =>
-            b.id === booking.id ? { ...b, status: "failed" } : b,
-        );
-        setBookings((current: Booking[]): Booking[] =>
-          current.map(
-            (b: Booking): Booking =>
-              b.id === booking.id ? { ...b, status: "failed" } : b,
-          ),
-        );
-      }
-    })();
+    publish([saved, ...latest.current.filter((booking: Booking): boolean => booking.id !== saved.id)]);
+    setError(null);
+    if (Platform.OS !== "web") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((): void => {});
   };
-  return (
-    <Context.Provider
-      value={{
-        bookings,
-        loading,
-        refreshing,
-        error,
-        failNext,
-        setFailNext,
-        refresh,
-        submit,
-      }}
-    >
-      {children}
-    </Context.Provider>
-  );
+  return <Context.Provider value={{ bookings, club, loading, refreshing, error, refresh, submit }}>{children}</Context.Provider>;
 };
 export const useBookings = (): BookingsState => {
-  const value = useContext(Context);
+  const value: BookingsState | null = useContext(Context);
   if (!value) throw new Error("BookingsProvider is required");
   return value;
 };

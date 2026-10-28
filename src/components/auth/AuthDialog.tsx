@@ -7,8 +7,8 @@ import { BlurView } from "@/components/ui/Blur";
 import { Button } from "@/components/ui/Button";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import {
-  AuthError, authErrorMessage, emailError, normalizeEmail, PASSWORD_HELP, validateSignUp,
-  type AuthFieldErrors, type SignUpInput,
+  AuthError, ClubSelectionError, authErrorMessage, emailError, normalizeEmail, PASSWORD_HELP, validateSignUp,
+  type AuthFieldErrors, type SignUpInput, type ClubChoice,
 } from "@/data/auth";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -33,6 +33,8 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
   const [notice, setNotice] = useState<Notice>(checkEmail && flowEmail ? "confirmation" : null);
   const [action, setAction] = useState<Action | null>(null);
   const [lockedEmail, setLockedEmail] = useState<string | null>(null);
+  const [clubs, setClubs] = useState<ClubChoice[]>([]);
+  const [clubId, setClubId] = useState<string>("");
   const submitting = useRef<boolean>(false);
   const active = useRef<boolean>(true);
   const scroll = useRef<ComponentRef<typeof ScrollView> | null>(null);
@@ -48,6 +50,8 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
   const changeTab = (next: AuthDialogTab): void => {
     if (submitting.current || next === tab) return;
     setTab(next);
+    setClubs([]);
+    setClubId("");
     clearPasswords();
     setErrors({});
     setError(null);
@@ -55,6 +59,7 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
     scroll.current?.scrollTo({ y: 0, animated: false });
   };
   const update = (field: keyof SignUpInput, value: string): void => {
+    if (field === "email" || field === "password") { setClubs([]); setClubId(""); }
     setInput((current: SignUpInput): SignUpInput => ({ ...current, [field]: value }));
     setErrors((current: AuthFieldErrors): AuthFieldErrors => ({ ...current, [field]: undefined }));
     setError(null);
@@ -71,6 +76,7 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
     } catch (failure: unknown) {
       if (active.current) {
         setError(authErrorMessage(failure));
+        if (failure instanceof ClubSelectionError) { setClubs(failure.clubs); setClubId(""); }
         if (nextAction === "sign-in" && failure instanceof AuthError && failure.code === "reset-required") {
           setLockedEmail(normalizeEmail(input.email));
           clearPasswords();
@@ -105,7 +111,8 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
           scroll.current?.scrollTo({ y: 0, animated: false });
         }
       } else {
-        await signIn(input.email, input.password);
+        if (clubs.length && !clubId) throw new AuthError("validation", "Choose a club to continue signing in.");
+        await signIn(input.email, input.password, clubId || undefined);
         if (active.current) {
           onClose();
           router.replace("/");
@@ -162,6 +169,15 @@ export const AuthDialog = ({ initialTab, checkEmail, blurTarget, onClose }: Auth
                     <AuthField label="Display Name" value={input.displayName} onChangeText={(value: string): void => update("displayName", value)} error={errors.displayName} editable={!busy} maxLength={200} />
                   </>}
                   <AuthField key={`${tab}-password`} label="Password" password value={input.password} onChangeText={(value: string): void => update("password", value)} autoComplete={registering ? "new-password" : "current-password"} hint={registering ? PASSWORD_HELP : undefined} error={errors.password} editable={!busy && (registering || !resetRequired)} returnKeyType={registering ? "next" : "go"} onSubmitEditing={registering ? undefined : (): void => { void submit(); }} />
+                  {!registering && clubs.length > 0 && (
+                    <View className="gap-2">
+                      <Text className="text-base font-medium text-neutral-900">Choose your club</Text>
+                      {clubs.map((choice: ClubChoice): ReactElement => (
+                        <Button key={choice.id} disabled={busy} variant={clubId === choice.id ? "toggle-active" : "toggle-inactive"}
+                          onPress={(): void => { setClubId(choice.id); setError(null); }}>{choice.name}</Button>
+                      ))}
+                    </View>
+                  )}
                   {registering && <AuthField label="Confirm Password" password value={input.passwordConfirmation} onChangeText={(value: string): void => update("passwordConfirmation", value)} autoComplete="new-password" error={errors.passwordConfirmation} editable={!busy} returnKeyType="go" onSubmitEditing={(): void => { void submit(); }} />}
                   {!registering && notice === "reset" && <Text accessibilityLiveRegion="polite" className="text-sm text-neutral-500">An password reset has been sent to the email provided.</Text>}
                   {!registering && (notice === "confirmation" || notice === "confirmation-resent") && (

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { Button } from "@/components/ui/Button";
-import { dateLabel, type Booking } from "@/data/bookings";
+import { bookingDate, dateLabel, processingBooking, sessionLabel, type Booking } from "@/data/bookings";
 import { useBookings } from "@/hooks/use-bookings";
 import { HeaderScrollInset } from "@/components/navigation-header";
 import { ScreenHeading } from "@/components/screen-heading";
@@ -20,49 +20,49 @@ import { useWideNavigation } from "@/hooks/use-wide-navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useAuthDialog } from "@/hooks/use-auth-dialog";
 import { AuthScreen } from "@/components/auth/AuthScreen";
-const BookingCard = ({ booking }: { booking: Booking }): ReactElement => (
+const BookingCard = ({ booking, timeZone }: { booking: Booking; timeZone: string }): ReactElement => (
   <View className="mb-3 gap-3 rounded-xl border border-neutral-200 bg-white p-4">
     <View className="flex-row items-center justify-between">
       <Text className="text-lg font-semibold text-neutral-900">
-        Table {booking.table}
+        {booking.tableName}
       </Text>
       <View
         accessibilityLiveRegion="polite"
         className="flex-row items-center gap-2"
       >
-        {booking.status === "pending" && (
+        {processingBooking(booking) && (
           <ActivityIndicator accessibilityLabel="Booking pending" />
         )}
         <Text
-          className={`text-sm ${booking.status === "failed" ? "text-amber-700" : "text-neutral-500"}`}
+          className={`text-sm ${booking.status === "Rejected" ? "text-amber-700" : "text-neutral-500"}`}
         >
-          {booking.status === "confirmed"
+          {booking.status === "Confirmed"
             ? "✓ Confirmed"
-            : booking.status === "failed"
+            : booking.status === "Rejected"
               ? "⚠ Failed"
-              : "Pending"}
+              : booking.status === "CancellationPending" ? "Cancelling" : booking.status}
         </Text>
       </View>
     </View>
     <Text className="text-base font-medium text-neutral-900">
-      {dateLabel(booking.date)}
+      {dateLabel(bookingDate(booking, timeZone))}
     </Text>
     <Text className="text-sm text-neutral-500">
-      All day · {booking.game || "Game not specified"}
+      {sessionLabel(booking, timeZone)} · {booking.gameName || "Game not specified"}
     </Text>
-    {(booking.spectators || booking.demo) && (
+    {(booking.spectators || booking.demoGame) && (
       <Text className="text-sm text-neutral-500">
         {[
           booking.spectators ? "Spectators encouraged" : "",
-          booking.demo ? "Demo game" : "",
+          booking.demoGame ? "Demo game" : "",
         ]
           .filter(Boolean)
           .join(" · ")}
       </Text>
     )}
-    {booking.status === "failed" && (
+    {booking.status === "Rejected" && (
       <Text className="text-sm text-amber-700">
-        Booking could not be saved.
+        {booking.failureCode === "ProcessingTimeout" ? "Confirmation timed out. The table has been released." : "Booking was rejected and the table has been released."}
       </Text>
     )}
   </View>
@@ -71,16 +71,18 @@ const SignedInBookingsScreen = (): ReactElement => {
   const onScroll = useScreenScroll();
   const wide = useWideNavigation();
   const constrainContent: boolean = Platform.OS === "web" && wide;
-  const { bookings, loading, refreshing, error, refresh } = useBookings();
+  const { bookings, club, loading, refreshing, error, refresh } = useBookings();
+  const { user } = useAuth();
   const header: ReactElement = (
     <View>
       <HeaderScrollInset />
       <ScreenHeading title="Your bookings" />
       <View className="mb-6">
-        <Button onPress={(): void => router.push("/create-booking")}>
+        <Button disabled={!user?.clubId || !club} onPress={(): void => router.push("/create-booking")}>
           ＋ Create Booking
         </Button>
       </View>
+      {!user?.clubId && <Text accessibilityRole="alert" className="mb-4 text-sm text-amber-700">No club is selected for your account. Sign in again with a club membership to book.</Text>}
       {error && (
         <Text accessibilityRole="alert" className="mb-4 text-sm text-amber-700">
           {error}
@@ -112,7 +114,7 @@ const SignedInBookingsScreen = (): ReactElement => {
             data={bookings}
             keyExtractor={(booking: Booking): string => booking.id}
             renderItem={({ item }: { item: Booking }): ReactElement => (
-              <BookingCard booking={item} />
+              <BookingCard booking={item} timeZone={club?.timeZoneId ?? "UTC"} />
             )}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={refresh} />

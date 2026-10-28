@@ -1,51 +1,86 @@
 // File: scripts/verify-bookings.cjs
-// Exercises the repository's SQL against SQLite without a native simulator.
+// Verify the HTTP booking contract with a controlled service; no live bookings are created.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { DatabaseSync } = require('node:sqlite');
 const ts = require('typescript');
-const sqlite = new DatabaseSync(':memory:');
-const adapter = {
-  execAsync: async (sql) => sqlite.exec(sql),
-  runAsync: async (sql, ...params) => sqlite.prepare(sql).run(...params),
-  getFirstAsync: async (sql, ...params) => sqlite.prepare(sql).get(...params),
-  getAllAsync: async (sql, ...params) => sqlite.prepare(sql).all(...params),
-  withTransactionAsync: async (action) => {
-    sqlite.exec('BEGIN');
-    try { await action(); sqlite.exec('COMMIT'); }
-    catch (error) { sqlite.exec('ROLLBACK'); throw error; }
+const compile = (name) => ts.transpileModule(fs.readFileSync(`src/data/${name}.ts`, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const selection = {};
+vm.runInNewContext(compile('game-selection'), { exports: selection });
+const exportsValue = {};
+vm.runInNewContext(compile('bookings'), { exports: exportsValue, Intl, Date, Map, Error,
+  require: (name) => name === './game-selection' ? selection : { authService: {} } });
+const { createBookingsService, createRequestId, validDraft, processingBooking, bookingDate, bookingErrorMessage } = exportsValue;
+const id = (last) => `61af7d36-2b80-4c9f-a314-${String(last).padStart(12, '0')}`;
+const clubId = id(10);
+const slot = { id: id(11), date: '2099-01-01', startsAtUtc: '2098-12-31T23:00:00Z', endsAtUtc: '2099-01-01T05:00:00Z' };
+const table = { id: id(12), name: 'Table 12', size: 'large' };
+const draft = { requestId: createRequestId(), timeslotId: slot.id, tableId: table.id, table: table.name, date: slot.date,
+  startsAtUtc: slot.startsAtUtc, endsAtUtc: slot.endsAtUtc, gameId: selection.OTHER_GAME_ID, game: "Player's game",
+  otherGameName: "  Player's game  ", spectators: true, demo: true };
+const booking = { id: id(13), requestId: draft.requestId, timeslotId: slot.id, tableId: table.id, tableName: table.name,
+  gameId: draft.gameId, gameName: draft.game, spectators: true, demoGame: true, status: 'Pending', failureCode: null, canRetry: false,
+  startsAtUtc: slot.startsAtUtc, endsAtUtc: slot.endsAtUtc };
+const calls = [];
+let reply = booking;
+let fail = false;
+const service = createBookingsService({
+  get: async (path) => {
+    calls.push({ path, method: 'GET' });
+    if (path === `/clubs/${clubId}`) return { id: clubId, name: 'Test Club', timeZoneId: 'Australia/Sydney' };
+    if (path.endsWith('/timeslots')) return [slot];
+    if (path.endsWith('/tables')) return [table];
+    if (path.endsWith(`/bookings/${booking.id}`)) return reply;
+    if (path.endsWith('/bookings')) return reply.status === 'Rejected' ? [] : [reply];
+    throw new Error(`Unexpected path ${path}`);
   },
-};
-const load = () => {
-  const source = ts.transpileModule(fs.readFileSync('src/data/bookings.ts', 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const exports = {};
-  vm.runInNewContext(source, { exports, require: () => ({ openDatabaseAsync: async () => adapter }), Intl, Date, Map });
-  return exports;
-};
+  post: async (path, body) => {
+    calls.push({ path, method: 'POST', body });
+    if (fail) { fail = false; throw new Error('Connection lost'); }
+    return reply;
+  },
+});
 (async () => {
-  const api = load();
-  const first = await api.bookingsRepository.list(api.CURRENT_USER_ID);
-  assert.equal(first.length, 1, 'Only the current user seed is listed');
-  assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM mock_bookings').get().count, 2);
-  const booking = { ...first[0], id: 'test-save', game: "Player's game", createdAt: '2099-01-01T00:00:00Z', status: 'pending' };
-  assert.equal(api.validDraft(booking), true, 'Today is bookable');
-  assert.equal(api.validDraft({ ...booking, game: '' }), true, 'Game is optional');
-  assert.equal(api.validDraft({ ...booking, game: 'x'.repeat(50) }), true);
-  assert.equal(api.validDraft({ ...booking, game: 'x'.repeat(51) }), false);
-  assert.equal(api.validDraft({ ...booking, date: '2000-01-01' }), false);
-  assert.equal(api.validDraft({ ...booking, table: 5 }), false);
-  await api.bookingsRepository.create(booking);
-  await api.bookingsRepository.create({ ...booking, id: 'past', date: '2000-01-01' });
-  const reloaded = await load().bookingsRepository.list(api.CURRENT_USER_ID);
-  assert.equal((await api.bookingsRepository.list('another-account')).length, 0, 'Another signed-in account cannot read these bookings');
-  assert.equal(reloaded.length, 2, 'Reload excludes past bookings and does not reseed');
-  assert.equal(reloaded[0].id, booking.id, 'Newest first');
-  assert.equal(reloaded[0].game, booking.game, 'Bound SQL preserves apostrophes');
-  assert.equal(reloaded[0].status, 'confirmed', 'Only confirmed state is persisted');
-  assert.equal(sqlite.prepare('PRAGMA user_version').get().user_version, 1);
-  sqlite.close();
-  console.log('Booking repository checks passed: seeding, ownership, dates, validation, ordering, persistence, SQL binding, migration version.');
+  assert.match(draft.requestId, /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/);
+  assert.equal(validDraft(draft), true);
+  for (const patch of [{ timeslotId: '' }, { tableId: '1' }, { requestId: '' }, { gameId: '' }, { otherGameName: ' ' }, { otherGameName: 'x'.repeat(201) }])
+    assert.equal(validDraft({ ...draft, ...patch }), false);
+  assert.equal(validDraft({ ...draft, otherGameName: 'x'.repeat(200) }), true);
+  assert.equal((await service.club(clubId)).timeZoneId, 'Australia/Sydney');
+  assert.equal((await service.timeslots(clubId))[0].id, slot.id);
+  assert.equal((await service.tables(clubId, slot.id))[0].id, table.id);
+  const saved = await service.create(clubId, draft);
+  assert.equal(saved.status, 'Pending', 'A 202 response never becomes simulated confirmation');
+  assert.equal(processingBooking(saved), true);
+  const command = calls.at(-1);
+  assert.equal(command.path, `/clubs/${clubId}/bookings`);
+  assert.equal(command.method, 'POST');
+  assert.deepEqual(JSON.parse(JSON.stringify(command.body)), {
+    requestId: draft.requestId, timeslotId: slot.id, tableId: table.id, gameId: selection.OTHER_GAME_ID,
+    otherGameName: "Player's game", spectators: true, demoGame: true,
+  });
+  assert.equal((await service.list(clubId))[0].id, saved.id, 'Reload uses server bookings');
+  assert.equal(bookingDate(saved, 'Australia/Sydney'), '2099-01-01', 'Date uses club timezone');
+  fail = true;
+  await assert.rejects(service.create(clubId, draft), /Connection lost/);
+  await service.create(clubId, draft);
+  assert.equal(calls.at(-1).body.requestId, calls.at(-2).body.requestId, 'Transport retries reuse the command UUID');
+  await service.create(clubId, { ...draft, gameId: id(1), game: 'Warhammer 40000', otherGameName: '' });
+  assert.equal('otherGameName' in calls.at(-1).body, false, 'Catalogue requests omit Other text');
+  reply = { ...booking, status: 'Confirmed' };
+  assert.equal((await service.get(clubId, saved.id)).status, 'Confirmed');
+  assert.equal(processingBooking(reply), false);
+  reply = { ...booking, status: 'Rejected', failureCode: 'ProcessingTimeout', canRetry: true };
+  assert.equal((await service.list(clubId)).length, 0);
+  assert.equal((await service.get(clubId, saved.id)).failureCode, 'ProcessingTimeout', 'Poll details for terminal outcomes excluded from active lists');
+  const before = calls.length;
+  await assert.rejects(service.list(''), /No club/);
+  await assert.rejects(service.create(clubId, { ...draft, tableId: '1' }), /Check/);
+  assert.equal(calls.length, before, 'Invalid routing/selection never contacts the API');
+  reply = {};
+  await assert.rejects(service.get(clubId, saved.id), /invalid booking/);
+  assert.match(bookingErrorMessage({ serverCode: 'TableUnavailable' }), /another table/);
+  console.log('Booking API checks passed: club routing, live option IDs, exact POST contract, Other names, stable retry UUID, server reload/statuses, validation and conflicts.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

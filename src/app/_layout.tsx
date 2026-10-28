@@ -29,7 +29,7 @@ const AuthenticatedLayout = (): ReactElement => {
     );
   }
   return (
-    <BookingsProvider key={user?.id ?? "guest"} userId={user?.id ?? null}>
+    <BookingsProvider key={`${user?.id ?? "guest"}:${user?.clubId ?? "none"}`} clubId={user?.clubId ?? null}>
       <HeaderScrollProvider>
         <StatusBar style="dark" />
         <Stack
