@@ -64,6 +64,27 @@ Verify the booking API contract with `node scripts/verify-bookings.cjs` and form
 with `node scripts/verify-booking-flow.cjs`.
 Verify the dropdown and catalogue handling with `node scripts/verify-games.cjs`.
 
+Administration (Trello #16) uses the selected club and live
+`GET /clubs/{clubId}/administration/access` permissions. Admin is the third navigation
+item; section links and direct routes require their own view grant. Edit and removal
+actions use independent grants. Club Details can update only the club name. Tables
+supports separate create/edit screens, enabling/disabling and confirmed removal;
+disabled tables remain listed and removed tables retain their booking history.
+Schedule and Users are placeholders, and metrics are not fetched.
+
+Table forms submit `name`, `size`, `availableFromDate` and `isEnabled` to the shared
+`/clubs/{clubId}/tables` routes. Names are trimmed; size must be explicitly selected;
+new-table dates use the club timezone. Duplicate-name, active-booking and concurrency
+conflicts retain entered values. Navigation asks before discarding unsaved changes.
+Permissions refresh on administration focus and app foreground; revoked access returns
+to Bookings, expired sessions open Sign In, and network failures offer Retry.
+The API must allow authenticated PUT and DELETE requests in its frontend CORS policy.
+
+Run `node scripts/verify-administration.cjs` for controlled API, permission lifecycle,
+form validation/recovery, discard protection and post-save navigation checks. These
+checks do not create or modify backend records. Physical iOS/Android layout and keyboard
+behavior also need device verification.
+
 You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Get a fresh project

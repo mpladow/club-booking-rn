@@ -43,6 +43,7 @@
 - Always pull task objectives from our synchronized project management tool.
 - At the start of every thread session, look for the target Trello board named "Club Booking".
 - Restrict your primary task ingestion strictly to cards found under the column: "**In Progress**".
+- Before proceeding work on a new Trello ticket, create a new branch off of main and prepend the branch name with the number of the ticket, plus a brief name. e.g., 4-AdminScreen
 
 ## Execution Workflow Steps
 

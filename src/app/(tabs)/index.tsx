@@ -1,6 +1,7 @@
 // File: src/app/(tabs)/index.tsx
 import { router } from "expo-router";
 import { type ReactElement } from "react";
+import { AdministrationNotice } from "@/components/administration/AdminPage";
 import {
   ActivityIndicator,
   FlatList,
@@ -77,6 +78,7 @@ const SignedInBookingsScreen = (): ReactElement => {
     <View>
       <HeaderScrollInset />
       <ScreenHeading title="Your bookings" />
+      <AdministrationNotice />
       <View className="mb-6">
         <Button disabled={!user?.clubId || !club} onPress={(): void => router.push("/create-booking")}>
           ＋ Create Booking
@@ -144,6 +146,7 @@ const BookingsScreen = (): ReactElement => {
   if (user) return <SignedInBookingsScreen />;
   return (
     <AuthScreen title="Your bookings">
+      <AdministrationNotice />
       <Text className="text-lg font-semibold text-neutral-900">Sign in to book a table</Text>
       <Text className="text-sm text-neutral-500">Your bookings will be available after you sign in.</Text>
       <Button onPress={(): void => openAuthDialog()}>＋ Create Booking</Button>

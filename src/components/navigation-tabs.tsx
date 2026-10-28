@@ -4,6 +4,8 @@ import { type ReactElement } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { APP_TABS, type AppTab } from "@/constants/navigation";
+import { useAdministration } from "@/hooks/use-administration";
+import { useConfirmation } from "@/hooks/use-confirmation";
 
 interface NavigationTabProps {
   label: string;
@@ -55,8 +57,10 @@ export const HeaderNavigation = ({
   inline?: boolean;
 }): ReactElement => {
   const pathname = usePathname();
+  const { access } = useAdministration();
+  const { navigate } = useConfirmation();
   const selectedTab: AppTab["name"] | null =
-    pathname.startsWith("/account") ? null : pathname === "/settings" ? "settings" : "index";
+    pathname.startsWith("/account") ? null : pathname.startsWith("/admin") ? "admin" : pathname === "/settings" ? "settings" : "index";
 
   return (
     <View
@@ -66,7 +70,7 @@ export const HeaderNavigation = ({
         ? "flex-row items-center gap-1"
         : "flex-row gap-2 rounded-2xl border border-neutral-200 bg-white p-2 shadow-lg"}
     >
-      {APP_TABS.map((tab: AppTab): ReactElement => (
+      {APP_TABS.filter((tab: AppTab): boolean => tab.name !== "admin" || Boolean(access?.canAccessAdministration)).map((tab: AppTab): ReactElement => (
         <NavigationTab
           key={tab.name}
           label={tab.label}
@@ -74,8 +78,10 @@ export const HeaderNavigation = ({
           wide
           inline={inline}
           onPress={(): void => {
-            if (pathname === "/create-booking") router.dismissTo(tab.href);
-            else router.navigate(tab.href);
+            void navigate((): void => {
+              if (pathname === "/create-booking") router.dismissTo(tab.href);
+              else router.navigate(tab.href);
+            });
           }}
         />
       ))}

@@ -12,6 +12,7 @@ import { useWideNavigation } from "@/hooks/use-wide-navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useAuthDialog } from "@/hooks/use-auth-dialog";
 import { authErrorMessage } from "@/data/auth";
+import { useConfirmation } from "@/hooks/use-confirmation";
 
 const OPACITY_CLASSES: readonly string[] = [
   "opacity-0",
@@ -53,6 +54,7 @@ export const NavigationHeader = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const { user, signOut } = useAuth();
   const { openAuthDialog } = useAuthDialog();
+  const { navigate } = useConfirmation();
   const pendingAuth = useRef<boolean>(false);
   useEffect((): (() => void) | undefined => {
     if (Platform.OS !== "web") return;
@@ -62,17 +64,21 @@ export const NavigationHeader = ({
   }, []);
   const handleAuth = async (): Promise<boolean> => {
     setAuthError(null);
+    if (Platform.OS === "ios" && menuOpen) {
+      // Dismiss the native sheet before presenting sign-in or discard confirmation.
+      pendingAuth.current = true;
+      setMenuOpen(false);
+      return false;
+    }
+    setMenuOpen(false);
     try {
       if (user) {
-        await signOut();
-        router.replace("/");
+        await navigate(async (): Promise<void> => {
+          await signOut();
+          router.replace("/");
+        });
       } else {
-        if (Platform.OS === "ios" && menuOpen) {
-          // Present after the native menu has finished dismissing.
-          pendingAuth.current = true;
-        } else {
-          openAuthDialog();
-        }
+        openAuthDialog();
       }
       setMenuOpen(false);
       return !user;
@@ -183,7 +189,7 @@ export const NavigationHeader = ({
         onDismiss={(): void => {
           if (pendingAuth.current) {
             pendingAuth.current = false;
-            openAuthDialog();
+            void handleAuth();
           }
         }}
       >

@@ -55,3 +55,15 @@ All buttons must be built using a flexible primitive structure wrapping a `Press
 | **Text (Tertiary)**      | `h-12 bg-transparent flex flex-row items-center justify-center px-4 active:opacity-60`                                      | `text-base font-medium text-indigo-600`    | Low-emphasis options, skip actions, auxiliary links.              |
 | **Toggle (Active)**      | `h-12 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-row items-center justify-center px-4`                      | `text-base font-semibold text-indigo-600`  | Multi-select buttons or active time slots in the booking wizard.  |
 | **Toggle (Inactive)**    | `h-12 bg-white border border-neutral-200 rounded-xl flex flex-row items-center justify-center px-4 active:opacity-80`       | `text-base font-normal text-neutral-600`   | Unselected options or available time slots in the booking wizard. |
+
+## 7. Menu Tiles
+
+Use `MenuTile` from `@/components/ui/MenuTile` for reusable menu actions. It provides
+the leading Expo Ionicon, title, optional subtitle, trailing arrow, standard spacing,
+focus/pressed states and disabled styling. Pass an `onPress` handler; keep routing,
+permissions and the surrounding responsive layout in the consuming screen.
+
+The `icon` prop accepts any Ionicons name through the exported `MenuTileIcon` type.
+The default accessibility label combines the title and subtitle; consumers can supply
+an accessibility label/hint, test ID and other Pressable interaction props. Tile styling
+is owned by the component so consumers stay consistent.

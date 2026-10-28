@@ -11,6 +11,8 @@ import { renderNavigationHeader } from "@/components/navigation-header";
 import { BookingsProvider } from "@/hooks/use-bookings";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AuthDialogProvider } from "@/hooks/use-auth-dialog";
+import { AdministrationProvider } from "@/hooks/use-administration";
+import { ConfirmationProvider } from "@/hooks/use-confirmation";
 
 const AuthenticatedLayout = (): ReactElement => {
   const { user, loading, restoreError, restore } = useAuth();
@@ -53,9 +55,13 @@ const AuthenticatedLayout = (): ReactElement => {
 
 const RootLayout = (): ReactElement => (
   <AuthProvider>
-    <AuthDialogProvider>
-      <AuthenticatedLayout />
-    </AuthDialogProvider>
+    <ConfirmationProvider>
+      <AuthDialogProvider>
+        <AdministrationProvider>
+          <AuthenticatedLayout />
+        </AdministrationProvider>
+      </AuthDialogProvider>
+    </ConfirmationProvider>
   </AuthProvider>
 );
 

@@ -3,14 +3,15 @@ export const CLUB_NAME: string = "Club Booking";
 export const WIDE_NAVIGATION_MIN_WIDTH: number = 1024;
 
 export interface AppTab {
-  name: "index" | "settings";
+  name: "index" | "settings" | "admin";
   label: string;
-  href: "/" | "/settings";
+  href: "/" | "/settings" | "/admin";
 }
 
 export const APP_TABS: readonly AppTab[] = [
   { name: "index", label: "Bookings", href: "/" },
   { name: "settings", label: "Settings", href: "/settings" },
+  { name: "admin", label: "Admin", href: "/admin" },
 ];
 
 export const PAGE_SUBTITLES: Readonly<Record<string, string>> = {

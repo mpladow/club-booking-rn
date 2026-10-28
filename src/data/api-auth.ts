@@ -27,12 +27,14 @@ interface ApiAuthOptions {
 export interface ApiAuthService extends AuthService {
   get: (path: string) => Promise<unknown>;
   post: (path: string, body: object) => Promise<unknown>;
+  put: (path: string, body: object) => Promise<unknown>;
+  delete: (path: string) => Promise<unknown>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-class ApiError extends AuthError {
+export class ApiError extends AuthError {
   constructor(public readonly status: number, code: AuthErrorCode, message: string, public readonly serverCode?: string) {
     super(code, message);
   }
@@ -53,14 +55,14 @@ export const createApiAuthService = ({ baseUrl, storage, fetcher = fetch, now = 
     return pending;
   };
 
-  const request = async (path: string, body?: object, accessToken?: string, prefix: string = "/auth"): Promise<unknown> => {
+  const request = async (path: string, body?: object, accessToken?: string, prefix: string = "/auth", method?: string): Promise<unknown> => {
     const controller: AbortController = new AbortController();
     const timeout: ReturnType<typeof setTimeout> = setTimeout((): void => controller.abort(), 15000);
     let response: Response;
     let result: unknown;
     try {
       response = await fetcher(`${origin}${prefix}${path}`, {
-        method: body === undefined ? "GET" : "POST",
+        method: method ?? (body === undefined ? "GET" : "POST"),
         credentials: "omit",
         headers: {
           Accept: "application/json",
@@ -196,7 +198,7 @@ export const createApiAuthService = ({ baseUrl, storage, fetcher = fetch, now = 
     return restoring;
   };
 
-  const authenticatedRequest = async (path: string, body?: object): Promise<unknown> => {
+  const authenticatedRequest = async (path: string, body?: object, method?: string): Promise<unknown> => {
       const started: number = generation;
       const session = async (refresh: boolean): Promise<Session> => {
         let current: Session | null = await withStorage((): Promise<Session | null> => readSession(started));
@@ -211,11 +213,11 @@ export const createApiAuthService = ({ baseUrl, storage, fetcher = fetch, now = 
       let current: Session = await session(false);
       let result: unknown;
       try {
-        result = await request(path, body, current.accessToken, "");
+        result = await request(path, body, current.accessToken, "", method);
       } catch (error: unknown) {
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
         current = await session(true);
-        result = await request(path, body, current.accessToken, "");
+        result = await request(path, body, current.accessToken, "", method);
       }
       if (started !== generation) throw new AuthError("session-expired", "Sign-in was cancelled. Please try again.");
       return result;
@@ -225,6 +227,8 @@ export const createApiAuthService = ({ baseUrl, storage, fetcher = fetch, now = 
     restoreSession,
     get: (path: string): Promise<unknown> => authenticatedRequest(path),
     post: (path: string, body: object): Promise<unknown> => authenticatedRequest(path, body),
+    put: (path: string, body: object): Promise<unknown> => authenticatedRequest(path, body, "PUT"),
+    delete: (path: string): Promise<unknown> => authenticatedRequest(path, undefined, "DELETE"),
     signIn: async (email: string, password: string, clubId?: string): Promise<AuthUser> => {
       if (emailError(email) || !password || password.length > 128)
         throw new AuthError("validation", "Enter your email address and password.");
