@@ -1,7 +1,7 @@
 // File: src/hooks/use-confirmation.tsx
 import { useIsFocused, usePreventRemove } from "expo-router";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "@/components/ui/SafeAreaView";
 import { Button } from "@/components/ui/Button";
 
@@ -49,9 +49,11 @@ export const ConfirmationProvider = ({ children }: { children: ReactNode }): Rea
       <Modal visible={Boolean(request)} transparent animationType="fade" onRequestClose={(): void => close(false)}>
         <SafeAreaView className="flex-1 items-center justify-center bg-black/40 px-5">
           <Pressable accessibilityRole="button" accessibilityLabel="Cancel confirmation" onPress={(): void => close(false)} className="absolute inset-0" />
-          <View accessibilityViewIsModal className="w-full max-w-md gap-5 rounded-2xl border border-neutral-200 bg-white p-6">
-            <Text accessibilityRole="header" className="text-lg font-semibold text-neutral-900">{request?.title}</Text>
-            <Text className="text-base text-neutral-600">{request?.message}</Text>
+          <View accessibilityViewIsModal className="max-h-full w-full max-w-md gap-5 rounded-2xl border border-neutral-200 bg-white p-6">
+            <ScrollView className="min-h-0 grow-0 shrink" keyboardShouldPersistTaps="handled"><View className="gap-5">
+              <Text accessibilityRole="header" className="text-lg font-semibold text-neutral-900">{request?.title}</Text>
+              <Text className="text-base text-neutral-600">{request?.message}</Text>
+            </View></ScrollView>
             <Button onPress={(): void => close(true)}>{request?.accept ?? "Continue"}</Button>
             <Button variant="outlined" onPress={(): void => close(false)}>Cancel</Button>
           </View>

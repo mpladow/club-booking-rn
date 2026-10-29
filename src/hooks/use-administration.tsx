@@ -116,7 +116,7 @@ export const useAdministrationFocus = (section?: AdminSection, edit: boolean = f
 };
 
 interface ResourceState<T> { data: T | null; error: string | null; loading: boolean; refreshing: boolean; refresh: () => Promise<void> }
-export const useAdministrationResource = <T,>(load: () => Promise<T>, enabled: boolean): ResourceState<T> => {
+export const useAdministrationResource = <T,>(load: () => Promise<T>, enabled: boolean, errorMessage: (error: unknown) => string = administrationErrorMessage): ResourceState<T> => {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -133,9 +133,9 @@ export const useAdministrationResource = <T,>(load: () => Promise<T>, enabled: b
       const next: T = await load();
       if (sequence.current === started) { setData(next); setError(null); }
     } catch (failure: unknown) {
-      if (sequence.current === started) { setError(administrationErrorMessage(failure)); failureRef.current(failure); }
+      if (sequence.current === started) { setError(errorMessage(failure)); failureRef.current(failure); }
     } finally { if (sequence.current === started) { setLoading(false); setRefreshing(false); } }
-  }, [load, enabled]);
+  }, [load, enabled, errorMessage]);
   useFocusEffect(useCallback((): (() => void) => {
     void refresh();
     return (): void => { sequence.current += 1; };

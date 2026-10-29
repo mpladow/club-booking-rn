@@ -16,7 +16,7 @@ import { useConfirmation } from "@/hooks/use-confirmation";
 interface AdminPageProps {
   title: string; allowed: boolean; children: ReactNode; loading?: boolean;
   error?: string | null; refreshing?: boolean; refresh?: () => Promise<void>;
-  back?: "/admin" | "/admin/tables";
+  back?: "/admin" | "/admin/tables" | "/admin/schedule";
 }
 export const AdminPage = ({ title, allowed, children, loading = false, error, refreshing = false, refresh, back }: AdminPageProps): ReactElement => {
   const wide: boolean = useWideNavigation();
@@ -37,7 +37,7 @@ export const AdminPage = ({ title, allowed, children, loading = false, error, re
             <ScreenHeading title={title} />
             <View className="gap-5 pt-4">
               {back && <View className="self-start"><Button variant="text" onPress={(): Promise<void> => navigate((): void => router.dismissTo(back))}>
-                {back === "/admin" ? "‹ Back to Administration" : "‹ Back to Tables"}
+                {back === "/admin" ? "‹ Back to Administration" : back === "/admin/schedule" ? "‹ Back to Schedule" : "‹ Back to Tables"}
               </Button></View>}
               {administration.loading || (loading && allowed) ? <View accessibilityLabel="Loading administration" className="gap-4"><ActivityIndicator /><View className="h-32 rounded-xl bg-neutral-200" /></View>
                 : !user ? <><Text className="text-base text-neutral-900">Sign in to access administration.</Text><Button onPress={(): void => openAuthDialog()}>Sign In</Button></>
