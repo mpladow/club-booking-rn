@@ -8,29 +8,32 @@ export type Weekday = typeof WEEKDAYS[number];
 export type ScheduleKind = "recurring" | "single";
 export interface WeeklyScheduleDetails {
   id: string; clubId: string; timeZoneId: string; weekday: Weekday; startTime: string; endTime: string;
-  scheduleStartDate: string; scheduleEndDate: string | null; name: string | null; description: string | null;
+  scheduleStartDate: string; scheduleEndDate: string | null; name: string | null; description: string | null; tableIds: string[];
 }
 export interface TimeslotDetails {
   id: string; clubId: string; recurringScheduleId: string | null; localSessionDate: string; timeZoneId: string;
   startTime: string; endTime: string; name: string | null; description: string | null;
   startsAtUtc: string; endsAtUtc: string; occurrenceType: "Recurring" | "Customised" | "Additional";
   closedAtUtc: string | null; closedByUserId: string | null; revision: number;
+  tableIds: string[] | null; readonly effectiveTableIds: string[];
 }
 export type ScheduleDetails = WeeklyScheduleDetails | TimeslotDetails;
 export interface Versioned<T> { value: T; etag: string }
 interface SessionInput { name: string | null; description: string | null; startTime: string; endTime: string }
-export interface WeeklyScheduleUpdate extends SessionInput { weekday: Weekday; scheduleStartDate: string; scheduleEndDate: string | null }
-export interface TimeslotUpdate extends SessionInput { localSessionDate: string }
+export interface WeeklyScheduleUpdate extends SessionInput { weekday: Weekday; scheduleStartDate: string; scheduleEndDate: string | null; tableIds: string[] }
+export interface TimeslotUpdate extends SessionInput { localSessionDate: string; tableIds: string[] | null }
 export interface ScheduleDraft {
   name: string; description: string; weekday: Weekday; startTime: string; endTime: string;
-  scheduleStartDate: string; scheduleEndDate: string; localSessionDate: string;
+  scheduleStartDate: string; scheduleEndDate: string; localSessionDate: string; tableIds: string[] | null;
 }
 export type ScheduleErrors = Partial<Record<keyof ScheduleDraft, string>>;
 export const TIME_OPTIONS: readonly string[] = Array.from({ length: 96 }, (_: unknown, i: number): string =>
   `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}:00`);
-export const emptyDraft = (date: string): ScheduleDraft => ({ name: "", description: "", weekday: WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()], startTime: "18:00:00", endTime: "21:00:00", scheduleStartDate: date, scheduleEndDate: "", localSessionDate: date });
+export const emptyDraft = (date: string): ScheduleDraft => ({ name: "", description: "", weekday: WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()], startTime: "18:00:00", endTime: "21:00:00", scheduleStartDate: date, scheduleEndDate: "", localSessionDate: date, tableIds: [] });
 export const draftFrom = (value: ScheduleDetails, today: string): ScheduleDraft => ({
   ...emptyDraft(today), name: value.name ?? "", description: value.description ?? "", startTime: value.startTime, endTime: value.endTime,
+  // null is inheritance, not an empty selection. Never materialise effective IDs into a PUT.
+  tableIds: value.tableIds === null ? null : [...value.tableIds],
   ...("weekday" in value ? { weekday: value.weekday, scheduleStartDate: today, scheduleEndDate: value.scheduleEndDate ?? "" }
     : { localSessionDate: value.localSessionDate }),
 });
@@ -40,6 +43,7 @@ export const editableTimeslot = (value: TimeslotDetails, now: number = Date.now(
 export const localClock = (zone: string, now: Date = new Date()): string => new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(now);
 export const validateSchedule = (input: ScheduleDraft, kind: ScheduleKind, today: string, clock: string, commencement: string): ScheduleErrors => {
   const errors: ScheduleErrors = {};
+  if (!(input.tableIds === null && kind === "single") && !validTableIds(input.tableIds)) errors.tableIds = "Choose a valid table selection.";
   if (!TIME_OPTIONS.includes(input.startTime)) errors.startTime = "Choose a start time in 15 minute increments.";
   if (!TIME_OPTIONS.includes(input.endTime) || input.endTime <= input.startTime) errors.endTime = "Choose an end time after the start time on the same day.";
   const date: string = kind === "recurring" ? input.scheduleStartDate : input.localSessionDate;
@@ -52,20 +56,25 @@ export const validateSchedule = (input: ScheduleDraft, kind: ScheduleKind, today
   }
   return errors;
 };
-export const schedulePayload = (input: ScheduleDraft, kind: ScheduleKind): WeeklyScheduleUpdate | TimeslotUpdate => ({
-  name: input.name.trim() || null, description: input.description.trim() || null, startTime: input.startTime, endTime: input.endTime,
-  ...(kind === "recurring" ? { weekday: input.weekday, scheduleStartDate: input.scheduleStartDate, scheduleEndDate: input.scheduleEndDate || null } : { localSessionDate: input.localSessionDate }),
-});
+export const schedulePayload = (input: ScheduleDraft, kind: ScheduleKind): WeeklyScheduleUpdate | TimeslotUpdate => {
+  if (!(input.tableIds === null && kind === "single") && !validTableIds(input.tableIds)) throw new Error("Choose a valid table selection.");
+  const common: SessionInput = { name: input.name.trim() || null, description: input.description.trim() || null, startTime: input.startTime, endTime: input.endTime };
+  return kind === "recurring" ? { ...common, weekday: input.weekday, scheduleStartDate: input.scheduleStartDate, scheduleEndDate: input.scheduleEndDate || null, tableIds: [...input.tableIds!] }
+    : { ...common, localSessionDate: input.localSessionDate, tableIds: input.tableIds === null ? null : [...input.tableIds] };
+};
+export const validTableIds = (value: unknown): value is string[] => Array.isArray(value)
+  && value.every((id: unknown): boolean => typeof id === "string" && /^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id) && id !== "00000000-0000-0000-0000-000000000000") && new Set(value).size === value.length;
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const textOrNull = (value: unknown): boolean => value === null || typeof value === "string";
-const fail = (): never => { throw new Error("Scheduling returned invalid details. Refresh and try again."); };
+const fail = (): never => { throw new Error("Scheduling returned invalid or outdated details. Refresh and check the API has the table-assignment update."); };
 const time = (value: unknown): boolean => typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(value);
 export const parseSchedule = (value: unknown, kind: ScheduleKind): ScheduleDetails => {
   if (!record(value) || typeof value.id !== "string" || typeof value.clubId !== "string" || typeof value.timeZoneId !== "string"
     || !time(value.startTime) || !time(value.endTime) || !textOrNull(value.name) || !textOrNull(value.description)) return fail();
   if (kind === "recurring") {
-    if (!WEEKDAYS.includes(value.weekday as Weekday) || !validDate(value.scheduleStartDate) || !(value.scheduleEndDate === null || validDate(value.scheduleEndDate))) return fail();
+    if (!WEEKDAYS.includes(value.weekday as Weekday) || !validDate(value.scheduleStartDate) || !(value.scheduleEndDate === null || validDate(value.scheduleEndDate)) || !validTableIds(value.tableIds)) return fail();
   } else if (!validDate(value.localSessionDate) || !textOrNull(value.recurringScheduleId) || !textOrNull(value.closedAtUtc) || !textOrNull(value.closedByUserId)
+    || !validTableIds(value.effectiveTableIds) || !(validTableIds(value.tableIds) || (value.tableIds === null && typeof value.recurringScheduleId === "string"))
     || !["Recurring", "Customised", "Additional"].includes(String(value.occurrenceType)) || !Number.isInteger(value.revision)
     || typeof value.startsAtUtc !== "string" || !Number.isFinite(Date.parse(value.startsAtUtc)) || typeof value.endsAtUtc !== "string" || !Number.isFinite(Date.parse(value.endsAtUtc))) return fail();
   return value as unknown as ScheduleDetails;
@@ -83,7 +92,7 @@ const path = (club: string, kind: ScheduleKind, id?: string): string => {
 interface SchedulingApi { resource: (path: string, options?: ResourceRequest) => Promise<ApiResource> }
 export const createSchedulingService = (api: SchedulingApi): {
   list: (club: string) => Promise<WeeklyScheduleDetails[]>;
-  timeslots: (club: string, from: string, to: string) => Promise<TimeslotDetails[]>;
+  timeslots: (club: string, from: string, to: string, includeClosed?: boolean) => Promise<TimeslotDetails[]>;
   details: (club: string, kind: ScheduleKind, id: string) => Promise<Versioned<ScheduleDetails>>;
   save: (club: string, kind: ScheduleKind, draft: ScheduleDraft, existing?: { id: string; etag: string }) => Promise<Versioned<ScheduleDetails>>;
   remove: (club: string, kind: ScheduleKind, id: string, etag: string) => Promise<void>;
@@ -93,15 +102,16 @@ export const createSchedulingService = (api: SchedulingApi): {
     if (!Array.isArray(response.value)) return fail();
     return response.value.map((v: unknown): WeeklyScheduleDetails => parseSchedule(v, "recurring") as WeeklyScheduleDetails);
   },
-  timeslots: async (club: string, from: string, to: string): Promise<TimeslotDetails[]> => {
+  timeslots: async (club: string, from: string, to: string, includeClosed: boolean = false): Promise<TimeslotDetails[]> => {
     if (!validDate(from) || !validDate(to) || to < from) throw new Error("Choose a valid calendar month.");
-    const response: ApiResource = await api.resource(`${path(club, "single").replace("/timeslots", "/administration/timeslots")}?fromDate=${from}&toDate=${to}&includeClosed=false`);
+    const response: ApiResource = await api.resource(`${path(club, "single").replace("/timeslots", "/administration/timeslots")}?fromDate=${from}&toDate=${to}&includeClosed=${includeClosed}`);
     if (!Array.isArray(response.value)) return fail();
     return response.value.map((v: unknown): TimeslotDetails => parseSchedule(v, "single") as TimeslotDetails);
   },
   details: async (club: string, kind: ScheduleKind, id: string): Promise<Versioned<ScheduleDetails>> => versioned(await api.resource(path(club, kind, id)), kind),
   save: async (club: string, kind: ScheduleKind, draft: ScheduleDraft, existing?: { id: string; etag: string }): Promise<Versioned<ScheduleDetails>> => {
     if (existing && !existing.etag) throw new Error("Reload the latest details before saving.");
+    if (!existing && draft.tableIds === null) throw new Error("New timeslots require an explicit table selection, which may be empty.");
     return versioned(await api.resource(path(club, kind, existing?.id), { method: existing ? "PUT" : "POST", body: schedulePayload(draft, kind), ifMatch: existing?.etag }), kind);
   },
   remove: async (club: string, kind: ScheduleKind, id: string, etag: string): Promise<void> => {
@@ -112,6 +122,7 @@ export const createSchedulingService = (api: SchedulingApi): {
 export const schedulingService = createSchedulingService(authService);
 export const schedulingError = (error: unknown): string => {
   if (error instanceof ApiError) {
+    if (error.serverCode === "InvalidTableSelection") return "A selected table has been removed, disabled or changed. Your draft is preserved. Refresh the table list and review your selection.";
     if (error.status === 412) return "Someone changed this item. Reload the latest details and reconcile your draft before confirming again.";
     if (error.status === 428) return "Reload the latest details before trying again.";
     if (error.status === 404) return "This schedule or timeslot is no longer available. Return to Schedule and refresh.";

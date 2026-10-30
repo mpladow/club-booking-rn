@@ -70,13 +70,14 @@ export const useConfirmation = (): ConfirmationState => {
 
 // Router removal covers hardware/browser Back and reload. Custom navigation also guards
 // tab changes, which blur the form without removing its stack entry.
-export const useUnsavedChanges = (dirty: boolean, discard: () => void, saving: boolean = false): { markSaved: () => void } => {
+export const useUnsavedChanges = (dirty: boolean, discard: () => void, saving: boolean = false, dismissOverlay?: () => void): { markSaved: () => void } => {
   const { confirm, registerGuard } = useConfirmation();
   const focused: boolean = useIsFocused();
   const dirtyRef = useRef<boolean>(dirty);
   const discardRef = useRef(discard);
   const savingRef = useRef<boolean>(saving);
-  useLayoutEffect((): void => { dirtyRef.current = dirty; discardRef.current = discard; savingRef.current = saving; }, [dirty, discard, saving]);
+  const overlayRef = useRef(dismissOverlay);
+  useLayoutEffect((): void => { dirtyRef.current = dirty; discardRef.current = discard; savingRef.current = saving; overlayRef.current = dismissOverlay; }, [dirty, discard, saving, dismissOverlay]);
   const disableRef = useRef<() => void>((): void => {});
   const markSaved = useCallback((): void => {
     dirtyRef.current = false;
@@ -84,13 +85,15 @@ export const useUnsavedChanges = (dirty: boolean, discard: () => void, saving: b
   }, []);
   const allowLeave = useCallback(async (): Promise<boolean> => {
     if (savingRef.current) return false;
+    // Browser Back closes an open picker first, preserving the underlying form.
+    if (overlayRef.current) { overlayRef.current(); return false; }
     if (!dirtyRef.current) return true;
     if (!await confirm({ title: "Discard changes?", message: "Your unsaved changes will be lost.", accept: "Discard changes" })) return false;
     discardRef.current();
     markSaved();
     return true;
   }, [confirm, markSaved]);
-  const disable = usePreventRemove((dirty || saving) && focused, ({ repeat }): void => {
+  const disable = usePreventRemove((dirty || saving || Boolean(dismissOverlay)) && focused, ({ repeat }): void => {
     void allowLeave().then((accepted: boolean): void => { if (accepted) repeat(); });
   });
   useLayoutEffect((): void => { disableRef.current = disable; }, [disable]);

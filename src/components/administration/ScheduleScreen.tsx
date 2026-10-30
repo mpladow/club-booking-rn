@@ -11,6 +11,7 @@ import { administrationService, type ClubDetails } from "@/data/administration";
 import { ApiError } from "@/data/api-auth";
 import { today, dateLabel } from "@/data/bookings";
 import { displayName, editableTimeslot, monthRange, schedulingError, schedulingService, sortSchedules, type ScheduleKind, type TimeslotDetails, type WeeklyScheduleDetails } from "@/data/scheduling";
+import { bookingWindowEnd, recurringPreviews, type RecurringPreview } from "@/data/schedule-calendar";
 import { useAdministration, useAdministrationFocus, useAdministrationLifetime, useAdministrationResource } from "@/hooks/use-administration";
 import { useConfirmation } from "@/hooks/use-confirmation";
 interface CalendarData { club: ClubDetails; month: string; slots: TimeslotDetails[]; schedules: WeeklyScheduleDetails[] }
@@ -29,12 +30,14 @@ const ScheduleScreen = (): ReactElement => {
     const club: ClubDetails = await administrationService.club(clubId ?? "");
     const current: string = month ?? today(club.timeZoneId).slice(0, 7);
     const range = monthRange(current);
-    const [slots, schedules] = await Promise.all([schedulingService.timeslots(club.id, range.from, range.to), schedulingService.list(club.id)]);
+    const [slots, schedules] = await Promise.all([schedulingService.timeslots(club.id, range.from, range.to, true), schedulingService.list(club.id)]);
     return { club, month: current, slots, schedules };
   }, [clubId, month]);
   const resource = useAdministrationResource(load, allowed, schedulingError);
   const data: CalendarData | null = resource.data;
   const localToday: string = data ? today(data.club.timeZoneId) : "";
+  const calendarSlots: TimeslotDetails[] = (data?.slots ?? []).filter((slot: TimeslotDetails): boolean => !slot.closedAtUtc);
+  const previews: RecurringPreview[] = data ? recurringPreviews(data.month, localToday, data.club, data.schedules, data.slots) : [];
   const canEdit: boolean = Boolean(access?.permissions.adminSchedules.edit);
   const canDelete: boolean = Boolean(access?.permissions.adminSchedules.delete);
   const open = (kind: ScheduleKind, id?: string, date?: string): void => {
@@ -63,14 +66,15 @@ const ScheduleScreen = (): ReactElement => {
       ? "This item changed. Deletion was not applied. Select Delete again to reload and review its latest details before confirming." : schedulingError(failure)); handleFailure(failure); } return false; }
     finally { if (mounted()) setBusy(false); }
   };
-  const slots: TimeslotDetails[] = (data?.slots ?? []).filter((slot: TimeslotDetails): boolean => slot.localSessionDate === selected).sort((a: TimeslotDetails, b: TimeslotDetails): number => a.startTime.localeCompare(b.startTime));
+  const slots: TimeslotDetails[] = calendarSlots.filter((slot: TimeslotDetails): boolean => slot.localSessionDate === selected).sort((a: TimeslotDetails, b: TimeslotDetails): number => a.startTime.localeCompare(b.startTime));
+  const selectedPreviews: RecurringPreview[] = previews.filter((preview: RecurringPreview): boolean => preview.localSessionDate === selected);
   return <AdminPage title="Schedule" back="/admin" allowed={allowed} loading={resource.loading} error={resource.error} refresh={resource.refresh} refreshing={resource.refreshing}>
     {error && <Message error>{error}</Message>}{notice && <Message>{notice}</Message>}
     {data && <>
       <Text className="text-sm text-neutral-500">All dates and times are in {data.club.timeZoneId}.</Text>
       <SurfaceTile title="Calendar" action={canEdit && <Button disabled={busy} onPress={(): void => open("single")}>Create Single Timeslot</Button>}>
-        <ScheduleCalendar month={data.month} today={localToday} timeslots={data.slots} changeMonth={(next: string): void => { setMonth(next); setSelected(null); }} busy={busy || resource.refreshing} canCreate={canEdit}
-          selectDate={(date: string): void => { if (data.slots.some((slot: TimeslotDetails): boolean => slot.localSessionDate === date)) setSelected(date); else open("single", undefined, date); }} />
+        <ScheduleCalendar month={data.month} today={localToday} timeslots={calendarSlots} previews={previews} generatedThrough={bookingWindowEnd(localToday, data.club.bookingWindowDays)} changeMonth={(next: string): void => { setMonth(next); setSelected(null); }} busy={busy || resource.refreshing} canCreate={canEdit}
+          selectDate={(date: string): void => { if (calendarSlots.some((slot: TimeslotDetails): boolean => slot.localSessionDate === date) || previews.some((preview: RecurringPreview): boolean => preview.localSessionDate === date)) setSelected(date); else open("single", undefined, date); }} />
       </SurfaceTile>
       <SurfaceTile title="Recurring timeslots" action={canEdit && <Button disabled={busy} onPress={(): void => open("recurring")}>Create Recurring Timeslot</Button>}>
         <View className="flex-row items-center justify-between gap-3"><Text className="text-base text-neutral-900">Show expired schedules</Text><Switch accessibilityLabel="Show expired schedules" value={expired} onValueChange={setExpired} /></View>
@@ -96,6 +100,13 @@ const ScheduleScreen = (): ReactElement => {
               {canEdit && <Button disabled={busy} variant="outlined" onPress={(): void => open("single", slot.id)}>Edit occurrence</Button>}
               {canDelete && <Button disabled={busy} variant="text" onPress={(): Promise<boolean> => remove("single", slot.id)}>Delete occurrence</Button>}
             </View>}
+          </View>)}
+          {selectedPreviews.map((preview: RecurringPreview): ReactElement => <View key={`${preview.schedule.id}:${preview.localSessionDate}`} className="gap-3 rounded-xl border border-dashed border-neutral-300 p-4">
+            <Text className="text-lg font-semibold text-neutral-900">{displayName(preview.schedule)}</Text>
+            <Text className="text-base text-neutral-900">{preview.schedule.startTime.slice(0, 5)}–{preview.schedule.endTime.slice(0, 5)}</Text>
+            <Text className="text-sm text-neutral-500">Recurring preview · This occurrence has not been generated yet and is not available for booking. Its details may change before generation.</Text>
+            {preview.schedule.description && <Text className="text-sm text-neutral-500">{preview.schedule.description}</Text>}
+            {canEdit && <Button disabled={busy} variant="outlined" onPress={(): void => open("recurring", preview.schedule.id)}>Edit Recurring Timeslot</Button>}
           </View>)}
         </View></ScrollView>
       </ScheduleModal>

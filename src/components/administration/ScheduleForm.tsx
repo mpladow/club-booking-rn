@@ -1,7 +1,7 @@
 // File: src/components/administration/ScheduleForm.tsx
 import { router, Stack } from "expo-router";
 import { type ReactElement } from "react";
-import { Text, TextInput, View } from "react-native";
+import { Keyboard, Text, TextInput, View } from "react-native";
 import { AdminPage, Message } from "./AdminPage";
 import { DateField, SelectField } from "./ScheduleControls";
 import { SurfaceTile } from "@/components/ui/SurfaceTile";
@@ -11,11 +11,14 @@ import { today } from "@/data/bookings";
 import { displayName, savedDraft, TIME_OPTIONS, WEEKDAYS, type ScheduleDraft, type ScheduleKind, type Weekday } from "@/data/scheduling";
 import { useAdministrationFocus } from "@/hooks/use-administration";
 import { useScheduleEditor } from "@/hooks/use-schedule-editor";
-const Summary = ({ input, kind, title }: { input: ScheduleDraft; kind: ScheduleKind; title: string }): ReactElement => <SurfaceTile title={title}>
+import { type ClubTable } from "@/data/administration";
+import { TableAssignmentPicker, TableAssignmentsSummary } from "./TableAssignments";
+const Summary = ({ input, kind, title, tables, inheritedIds }: { input: ScheduleDraft; kind: ScheduleKind; title: string; tables: readonly ClubTable[]; inheritedIds?: readonly string[] | null }): ReactElement => <SurfaceTile title={title}>
   <Text className="text-base font-semibold text-neutral-900">{input.name.trim() || (kind === "recurring" ? "Regular Session" : "Additional Session")}</Text>
   {input.description.trim() && <Text className="text-base text-neutral-900">{input.description.trim()}</Text>}
   <Text className="text-base text-neutral-900">{kind === "recurring" ? `Every ${input.weekday}` : input.localSessionDate} · {input.startTime.slice(0, 5)}–{input.endTime.slice(0, 5)}</Text>
   {kind === "recurring" && <><Text className="text-sm text-neutral-500">Apply changes from: {input.scheduleStartDate}</Text><Text className="text-sm text-neutral-500">End of Schedule: {input.scheduleEndDate || "No end date"} (inclusive)</Text></>}
+  <TableAssignmentsSummary ids={input.tableIds ?? inheritedIds ?? null} inherited={input.tableIds === null} tables={tables} />
 </SurfaceTile>;
 export const ScheduleForm = ({ kind, id, date }: { kind: ScheduleKind; id?: string; date?: string }): ReactElement => {
   const allowed: boolean = useAdministrationFocus("adminSchedules", true);
@@ -24,7 +27,8 @@ export const ScheduleForm = ({ kind, id, date }: { kind: ScheduleKind; id?: stri
   const recurring: boolean = kind === "recurring";
   const zone: string = editor.data?.club.timeZoneId ?? "the club timezone";
   const minimum: string = editor.data ? [today(zone), editor.data.club.commencementDate].sort().at(-1) ?? today(zone) : "2000-01-01";
-  const disabled: boolean = editor.saving || editor.readOnly || editor.stale;
+  const disabled: boolean = editor.saving || editor.readOnly || editor.stale || editor.refreshing;
+  const tables: readonly ClubTable[] = editor.data?.tables ?? [];
   const fallback: string = editor.current ? displayName({ ...editor.current.value, name: null }) : recurring ? "Regular Session" : "Additional Session";
   const heading: string = editor.stage === "saved" ? "Saved" : editor.stage === "review" ? "Review Timeslot" : `${editor.current ? "Edit" : "Create"} ${recurring ? "Recurring" : "Single"} Timeslot`;
   return <AdminPage title={heading} allowed={allowed} back="/admin/schedule" loading={editor.loading} error={editor.loadError} refresh={editor.refresh} refreshing={editor.refreshing}>
@@ -35,7 +39,7 @@ export const ScheduleForm = ({ kind, id, date }: { kind: ScheduleKind; id?: stri
       {editor.stale && <View className="gap-4">
         <Message error>Your draft is preserved. Reload and compare the latest details before deciding how to continue.</Message>
         {!editor.latest ? <Button loading={editor.saving} onPress={editor.reloadLatest}>Reload latest details</Button> : <>
-          <Summary input={savedDraft(editor.latest.value)} kind={kind} title="Latest saved details" />
+          <Summary input={savedDraft(editor.latest.value)} kind={kind} title="Latest saved details" tables={tables} inheritedIds={"effectiveTableIds" in editor.latest.value ? editor.latest.value.effectiveTableIds : null} />
           <Button disabled={editor.saving || editor.readOnly} onPress={(): void => editor.reconcile(true)}>Keep my draft against this version</Button>
           <Button disabled={editor.saving} variant="outlined" onPress={(): void => editor.reconcile(false)}>Use latest details instead</Button>
         </>}
@@ -51,23 +55,29 @@ export const ScheduleForm = ({ kind, id, date }: { kind: ScheduleKind; id?: stri
         {recurring ? <><SelectField label="Weekday" value={input.weekday} options={WEEKDAYS} disabled={disabled} error={errors.weekday} change={(value: string): void => editor.change("weekday", value as Weekday)} />
           <DateField label="Apply changes from" value={input.scheduleStartDate} minimum={minimum} disabled={disabled} error={errors.scheduleStartDate} change={(value: string): void => editor.change("scheduleStartDate", value)} />
           <DateField label="End of Schedule date (optional, inclusive)" value={input.scheduleEndDate} minimum={input.scheduleStartDate > minimum ? input.scheduleStartDate : minimum} optional disabled={disabled} error={errors.scheduleEndDate} change={(value: string): void => editor.change("scheduleEndDate", value)} />
-          <Message>Repeats weekly on the selected weekday, starting with the first matching day on or after Apply changes from. For a permanent recurring change, end-date the existing schedule and create a new one. Past and individually edited occurrences are preserved.</Message>
+          <Message>Repeats weekly on the selected weekday, starting with the first matching day on or after Apply changes from. For a permanent recurring change, end-date the existing schedule and create a new one. Individual name/time edits and explicit table overrides are preserved. Sessions using recurring tables inherit table changes.</Message>
         </> : <><DateField label="Session date" value={input.localSessionDate} minimum={minimum} disabled={disabled || editor.dateFixed} error={errors.localSessionDate} change={(value: string): void => editor.change("localSessionDate", value)} />
           {editor.dateFixed && <Text className="text-sm text-neutral-500">This edit affects only this occurrence. Its recurring date is fixed.</Text>}</>}
         <View className="gap-5 sm:flex-row"><View className="flex-1"><SelectField label="Start time" value={input.startTime} options={TIME_OPTIONS} disabled={disabled} error={errors.startTime} change={(value: string): void => editor.change("startTime", value)} /></View>
           <View className="flex-1"><SelectField label="End time" value={input.endTime} options={TIME_OPTIONS} disabled={disabled} error={errors.endTime} change={(value: string): void => editor.change("endTime", value)} /></View></View>
+        <TableAssignmentsSummary ids={input.tableIds ?? editor.inheritedTableIds} inherited={input.tableIds === null} tables={tables} />
+        {errors.tableIds && <Message error>{errors.tableIds}</Message>}
+        <Button variant="outlined" disabled={disabled} onPress={(): void => { Keyboard.dismiss(); editor.openTables(); }}>Configure Tables</Button>
         <Button disabled={disabled} onPress={editor.review}>Save</Button>
       </SurfaceTile> : editor.stage === "review" ? <>
-        <Summary input={{ ...input, name: input.name.trim() || fallback }} kind={kind} title="Review your changes" />
-        <Message>{editor.current ? "Confirm applies these changes." : "Confirm creates this timeslot."} Changes to a recurring schedule affect future standard occurrences only. Pending or confirmed bookings and overlaps can prevent saving. Bookings will not be cancelled.</Message>
+        <Summary input={{ ...input, name: input.name.trim() || fallback }} kind={kind} title="Review your changes" tables={tables} inheritedIds={editor.inheritedTableIds} />
+        <Message>{editor.current ? "Confirm applies these changes." : "Confirm creates this timeslot."} Recurring table changes affect inheriting future sessions, including those with individual name/time edits. Explicit table overrides are preserved. Removing a reserved table can prevent saving; configuration changes do not cancel bookings.</Message>
         <Button loading={editor.saving} disabled={disabled} onPress={editor.confirm}>Confirm</Button>
         <Button variant="outlined" disabled={editor.saving} onPress={editor.backToForm}>Back to form</Button>
       </> : <>
         <Message>Your changes have been saved.</Message>
-        <Summary input={editor.current ? savedDraft(editor.current.value) : input} kind={kind} title="Saved details" />
+        <Summary input={editor.current ? savedDraft(editor.current.value) : input} kind={kind} title="Saved details" tables={tables} inheritedIds={editor.current && "effectiveTableIds" in editor.current.value ? editor.current.value.effectiveTableIds : null} />
         <Button onPress={(): void => router.dismissTo("/admin/schedule")}>Back to Schedule</Button>
         <Button variant="outlined" disabled={editor.readOnly} onPress={editor.editSaved}>Edit</Button>
       </>}
+      {editor.configuringTables && <TableAssignmentPicker value={input.tableIds} inheritedIds={editor.inheritedTableIds} tables={tables} retainedIds={editor.retainedTableIds}
+        canInherit={editor.dateFixed} disabled={editor.saving || editor.readOnly || editor.stale} refreshing={editor.refreshing} refresh={editor.refresh}
+        apply={(ids: string[] | null): void => editor.change("tableIds", ids)} close={editor.closeTables} />}
     </>}
   </AdminPage>;
 };

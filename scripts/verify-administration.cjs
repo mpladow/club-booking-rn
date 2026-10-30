@@ -189,7 +189,7 @@ const harness = (file, dependency, getContext = () => undefined) => {
 
   // Both custom tab navigation and router Back use the same unsaved-change decision.
   let guard, blocked, removeCallback, accepts = false, confirmations = 0, discards = 0, disables = 0, focused = true;
-  let hasChanges = true, saving = false;
+  let hasChanges = true, saving = false, dismissOverlay;
   const confirmationContext = {
     confirm: async () => { confirmations++; return accepts; },
     registerGuard: (next) => { guard = next; return () => { if (guard === next) guard = null; }; },
@@ -201,7 +201,7 @@ const harness = (file, dependency, getContext = () => undefined) => {
     if (name === '@/components/ui/Button') return { Button: 'Button' };
     throw new Error(name);
   }, () => confirmationContext);
-  const renderGuard = () => unsaved.render((mod) => mod.useUnsavedChanges(hasChanges, () => { discards++; hasChanges = false; }, saving));
+  const renderGuard = () => unsaved.render((mod) => mod.useUnsavedChanges(hasChanges, () => { discards++; hasChanges = false; }, saving, dismissOverlay));
   renderGuard();
   assert.equal(blocked, true);
   assert.equal(await guard(), false);
@@ -216,6 +216,21 @@ const harness = (file, dependency, getContext = () => undefined) => {
   const confirmed = confirmations;
   await guard();
   assert.equal(confirmations, confirmed, 'Saved or discarded forms do not prompt again');
+  let overlayClosed = 0;
+  hasChanges = true;
+  dismissOverlay = () => { overlayClosed++; dismissOverlay = undefined; };
+  renderGuard(); repeated = false;
+  removeCallback({ repeat: () => { repeated = true; } }); await flush(); renderGuard();
+  assert.equal(overlayClosed, 1, 'Browser Back closes the picker first');
+  assert.equal(repeated, false, 'Closing the picker does not remove the underlying form');
+  assert.equal(hasChanges, true, 'Confirmed form changes remain intact');
+  assert.equal(confirmations, confirmed, 'Picker dismissal does not open a form-discard confirmation');
+  assert.equal(blocked, true, 'The dirty form remains protected after the picker closes');
+  hasChanges = false;
+  dismissOverlay = () => { overlayClosed++; dismissOverlay = undefined; };
+  renderGuard(); assert.equal(blocked, true, 'Even a clean form keeps Back inside an open picker');
+  assert.equal(await guard(), false); renderGuard();
+  assert.equal(blocked, false); assert.equal(overlayClosed, 2);
   saving = true; renderGuard();
   assert.equal(await guard(), false, 'An in-flight save cannot be discarded mid-request');
   focused = false; renderGuard();

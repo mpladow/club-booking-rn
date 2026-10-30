@@ -22,12 +22,12 @@ const TablesScreen = (): ReactElement => {
   const permissions = access?.permissions.adminTables;
   const remove = async (table: ClubTable): Promise<boolean> => {
     if (!clubId || !permissions?.delete || removing) return false;
-    if (!await confirm({ title: "Remove Table?", message: `Remove “${table.name}”? Booking history will be preserved. The table will no longer be available and cannot be restored.`, accept: "Remove Table" }) || !isMounted()) return false;
+    if (!await confirm({ title: "Remove Table?", message: `Remove “${table.name}”? This removes the table from recurring selections and future sessions that have not started. Its pending and confirmed reservations in those sessions will be cancelled. Started sessions, existing reservations in them and booking history are preserved. The table cannot be restored.`, accept: "Remove Table" }) || !isMounted()) return false;
     setRemoving(table.id); setError(null); setSuccess(null);
     try {
       await administrationService.removeTable(clubId, table.id);
       if (!isMounted()) return false;
-      setSuccess(`${table.name} removed. Booking history has been preserved.`);
+      setSuccess(`${table.name} removed. Future reservations on it are being cancelled; started sessions and booking history are preserved.`);
       await resource.refresh();
       return true;
     } catch (failure: unknown) { if (isMounted()) { setError(administrationErrorMessage(failure)); handleFailure(failure); } return false; }
